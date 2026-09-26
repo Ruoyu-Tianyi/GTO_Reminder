@@ -1,0 +1,16 @@
+{
+  "name": "gto-reminder",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {"react": "^19.1.0", "react-dom": "^19.1.0", "lucide-react": "^0.468.0"},
+  "devDependencies": {"@types/react": "^19.1.0", "@types/react-dom": "^19.1.0", "@vitejs/plugin-react": "^4.4.0", "typescript": "~5.8.3", "vite": "^6.3.5", "vitest": "^3.2.0", "@types/node": "^22.15.0"},
+  "packageManager": "npm@11.6.2"
+}
