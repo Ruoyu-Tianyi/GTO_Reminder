@@ -21,6 +21,15 @@ GTO_Reminder 希望把成熟的德州扑克策略数据整理成易用的网页�
 
 ## 本地运行
 
+Windows 当前工作区可以直接在 PowerShell 中运行：
+
+```powershell
+cd D:\000_Workspace\Texasholdem_gto_reminder
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+脚本会查找系统 Node.js，也支持当前用户的 Codex 本地运行时，无需先把 Node 加入系统 PATH。启动后打开终端显示的 `Local` 地址，保持终端打开；按 Ctrl+C 停止。默认端口为 5173，可用 `-Port 5180` 指定其他端口。7890 是网络代理端口，不是网页地址。
+
 建议使用 Node.js 20.19+ 或 22.12+，并使用 npm 安装。仓库使用 `package-lock.json` 锁定依赖版本。
 
 ```bash
