@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronRight, CircleHelp, Database, Grid2X2, Info, Layers3, Plus, RotateCcw, Settings2, Spade, Upload, X } from 'lucide-react';
 import { DEMO_DATASET } from './data/demo';
+import ReferenceLibrary, { CoveragePanel, ReferenceSummary } from './ReferenceLibrary';
 import { HANDS, comboCount, findNode, getPositions, getVillains, normalizeHand, rangeSummary, validateDataset, type Dataset, type Position, type Spot, type SpotKind } from './lib/poker';
 
 const INITIAL_SPOT: Spot = { players: 6, hero: 'BTN', villain: null, stackBb: 100, kind: 'rfi', openSizeBb: 2.5, threeBetSizeBb: 10, fourBetSizeBb: 22, format: 'cash', anteBb: 0, rake: '5% · 3 BB cap' };
@@ -29,7 +30,9 @@ export default function App() {
   const [language, setLanguage] = useState<'en' | 'zh'>(() => { try { return localStorage.getItem('gto-language') === 'zh' ? 'zh' : 'en'; } catch { return 'en'; } });
   const [datasets, setDatasets] = useState<Dataset[]>([DEMO_DATASET]);
   const [datasetId, setDatasetId] = useState(DEMO_DATASET.id);
-  const [modal, setModal] = useState<'data' | 'guide' | null>(null);
+  const [modal, setModal] = useState<'data' | 'guide' | 'references' | null>(null);
+  const [localErrors, setLocalErrors] = useState<string[]>([]);
+  const [localDatasetCount, setLocalDatasetCount] = useState(0);
   const [importError, setImportError] = useState('');
   const [importMessage, setImportMessage] = useState('');
   const [advanced, setAdvanced] = useState(false);
@@ -53,6 +56,18 @@ export default function App() {
 
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; try { localStorage.setItem('gto-language', language); } catch { /* preferences are optional */ } }, [language]);
   useEffect(() => { if (modal && !dialogRef.current?.open) dialogRef.current?.showModal(); if (!modal && dialogRef.current?.open) dialogRef.current.close(); }, [modal]);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const controller = new AbortController();
+    fetch('/api/local-datasets', { signal: controller.signal }).then(async response => {
+      if (!response.ok) throw new Error('The local strategy folder could not be loaded.');
+      const result = await response.json() as { datasets: unknown[]; errors: string[] };
+      const incoming = result.datasets.map(validateDataset).filter(data => data.id !== DEMO_DATASET.id);
+      setDatasets(current => [...current, ...incoming.filter(data => !current.some(existing => existing.id === data.id))]);
+      setLocalDatasetCount(incoming.length); setLocalErrors(result.errors);
+    }).catch(error => { if (!controller.signal.aborted) setLocalErrors([error instanceof Error ? error.message : 'Local data unavailable']); });
+    return () => controller.abort();
+  }, []);
 
   async function importDataset(file: File | undefined) {
     if (!file) return;
@@ -85,6 +100,7 @@ export default function App() {
       <div className="page-heading"><div><div className="eyebrow">THE STUDY ROOM <span>/</span> PREFLOP</div><h1>{t('Preflop workspace', '翻前策略工作台')}<span className="version">v0.1</span></h1><p>{t('Set the spot. Explore the range. Understand the frequency.', '选择场景，查看范围，理解每一手牌的行动频率。')}</p></div><button className="secondary-button source-button" onClick={() => setModal('data')}><Database size={16} />{t('Manage data', '管理数据')}<ArrowUpRight size={15} /></button></div>
       <div className={`data-notice ${isDemo ? 'demo-notice' : 'import-notice'}`}><Info size={17} /><span><strong>{isDemo ? t('Interactive demo', '交互演示') : t('Imported dataset', '已导入数据')}</strong><span className="notice-divider">·</span>{isDemo ? t('Synthetic frequencies for exploring the interface. Not a solved GTO strategy.', '当前频率仅用于界面演示，并非求解器计算的 GTO 策略。') : t('Source and accuracy are declared by the file owner, not independently verified.', '来源与准确性由文件提供者声明，尚未经独立验证。')}</span><button onClick={() => setModal('data')}>{t('View source', '查看来源')}<ChevronRight size={14} /></button></div>
 
+      <ReferenceSummary onOpen={() => setModal('references')} t={t}/>
       <div className="workspace">
         <section className="setup-panel panel" aria-labelledby="setup-title">
           <div className="panel-heading"><h2 id="setup-title"><span className="step-number">01</span>{t('Set your spot', '设置场景')}</h2><button className="icon-button" aria-label="Reset spot" onClick={() => { setSpot(INITIAL_SPOT); setDatasetId(DEMO_DATASET.id); setFilter('all'); }}><RotateCcw size={15} /></button></div>
@@ -133,10 +149,12 @@ export default function App() {
       <footer><span><Spade size={13} fill="currentColor"/>GTO_Reminder <span className="footer-slash">/</span> {t('Built for deliberate study.', '专注每一次策略学习。')}</span><span>Preflop first.<span className="footer-slash">/</span>Full-game study, next.</span></footer>
     </main>
 
-    <dialog ref={dialogRef} onCancel={() => setModal(null)} onClose={() => setModal(null)} onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
-      <div className="dialog-heading"><span className="dialog-icon">{modal === 'data' ? <Database size={22}/> : <BookOpen size={22}/>}</span><div><div className="eyebrow">GTO_REMINDER</div><h2>{modal === 'data' ? t('Your strategy library', '策略数据库') : t('A guide to the workspace', '工作台使用说明')}</h2></div><button className="icon-button" aria-label="Close dialog" onClick={() => setModal(null)}><X size={21}/></button></div>
-      {modal === 'data' ? <div className="dialog-body">
+    <dialog className={modal === 'references' ? 'reference-dialog' : ''} ref={dialogRef} onCancel={() => setModal(null)} onClose={() => setModal(null)} onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
+      <div className="dialog-heading"><span className="dialog-icon">{modal === 'data' ? <Database size={22}/> : <BookOpen size={22}/>}</span><div><div className="eyebrow">GTO_REMINDER</div><h2>{modal === 'data' ? t('Your strategy library', '策略数据库') : modal === 'references' ? t('Professional reference charts', '专业翻前参考图') : t('A guide to the workspace', '工作台使用说明')}</h2></div><button className="icon-button" aria-label="Close dialog" onClick={() => setModal(null)}><X size={21}/></button></div>
+      {modal === 'references' ? <ReferenceLibrary spot={spot} t={t}/> : modal === 'data' ? <div className="dialog-body">
         <p className="dialog-intro">{t('Every frequency needs a source. Inspect a dataset, choose a covered spot, or bring your own licensed ranges.', '每一个频率都应有据可查。检查数据来源、选择已覆盖的场景，或导入你有权使用的范围。')}</p>
+        <CoveragePanel datasets={datasets} spot={spot} t={t}/>
+        {import.meta.env.DEV && <div className="local-data-status"><p>{t(`${localDatasetCount} local datasets loaded from data/private. JSON files saved there are loaded again after refresh.`, `已从 data/private 载入 ${localDatasetCount} 个本地数据集。放入该目录的 JSON 文件会在刷新后重新载入。`)}</p>{localErrors.map((error, index) => <p className="import-error" role="alert" key={index}>{error}</p>)}</div>}
         <label>{t('Active dataset', '当前数据集')}<select value={datasetId} onChange={e => switchDataset(e.target.value)}>{datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
         <div className="source-details"><div><span>{t('Provider', '提供者')}</span><strong>{dataset.source.name}</strong></div><div><span>{t('Data status', '数据状态')}</span><strong>{isDemo ? t('Synthetic demo · not GTO', '合成演示 · 非 GTO') : t('User import · unverified', '用户导入 · 未独立验证')}</strong></div><div><span>{t('License / usage', '许可 / 用途')}</span><strong>{dataset.source.license}</strong></div><div><span>{t('Retrieved', '获取日期')}</span><strong>{dataset.source.retrievedAt}</strong></div>{/^https?:\/\//.test(dataset.source.url) && <a href={dataset.source.url} target="_blank" rel="noreferrer">{t('Original source', '原始来源')}<ArrowUpRight size={14}/></a>}</div>
         <label>{t('Covered spots', '已覆盖场景')}<select aria-label="Covered spots" value={node?.id ?? ''} onChange={e => { const next = dataset.nodes.find(n => n.id === e.target.value); if (next) {setSpot(next.spot); setFilter('all');} }}>{!node && <option value="">{t('Choose a covered spot', '选择已覆盖的场景')}</option>}{dataset.nodes.map(n => <option key={n.id} value={n.id}>{spotTitle(n.spot)} / {n.spot.players}-max / {n.spot.stackBb} BB / {n.spot.openSizeBb}-{n.spot.threeBetSizeBb}-{n.spot.fourBetSizeBb} BB / {n.spot.format} / ante {n.spot.anteBb} / {n.spot.rake}</option>)}</select></label>

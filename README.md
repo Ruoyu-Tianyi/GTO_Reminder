@@ -6,6 +6,8 @@ GTO_Reminder 希望把成熟的德州扑克策略数据整理成易用的网页�
 
 [GitHub repository](https://github.com/Ruoyu-Tianyi/GTO_Reminder) · [数据格式](docs/DATA_FORMAT.md) · [来源调研](docs/DATA_SOURCES.md) · [后续路线](docs/ROADMAP.md)
 
+**2026-09-27 数据补充：**已接入 6、8、9 人 Cash 100 BB 的专业原始 PDF 查阅，合计 205 个场景页码索引，包括 8 人局的 Facing 4-Bet。网页顶部点击 `Browse charts`。5、7 人完整公开资料与逐手精确数值频率仍缺失；原图不会冒充精确策略填进频率计算器。来源、原稿缺陷、页码及本地下载方式见[公开图表记录](docs/PUBLIC_CHARTS.md)。
+
 ## 当前功能
 
 - 默认英文界面，可切换中文；SB、BB、HJ、BTN 等位置缩写，以及 Raise、Call、Fold 等动作保留英文。
@@ -56,6 +58,8 @@ npm run preview
 3. 点击 `Import JSON` 导入，再从 `Covered spots` 选择场景。
 
 导入文件只在当前页面的内存中处理，**刷新页面后清空**；应用不会上传范围到服务器或 GitHub。语言偏好单独保存在浏览器本地。
+
+本地开发模式也会读取 `data/private/` 顶层的标准 JSON 文件（单文件上限 20 MB），经过相同校验后加入列表，刷新页面会再次载入。该目录已被 Git 忽略，不进入生产构建。无效文件在数据面板中提示，并不影响其他有效文件。数据面板提供 5–9 人场景覆盖统计和缺失清单；计数不含演示或 PDF，也不等于整个翻前行动树。
 
 来源网址、许可文字和准确性均由文件提供者声明。当前校验器检查结构与部分行动规则，不验证供应商身份、使用权限、求解收敛或频率质量。具体接入建议见[数据来源调研](docs/DATA_SOURCES.md)。
 
