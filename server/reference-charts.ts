@@ -1,7 +1,17 @@
 import { readFile, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { Plugin } from 'vite';
-import { CHART_REFERENCES } from '../src/data/references';
+import { CHART_REFERENCES, type ChartReference } from '../src/data/references';
+
+async function reviewedPdf(directory: string, reference: ChartReference): Promise<Buffer> {
+  const filename = path.join(directory, reference.filename);
+  const info = await stat(filename);
+  if (!info.isFile() || info.size > 60 * 1024 * 1024) throw new Error('Invalid reference PDF');
+  const data = await readFile(filename);
+  if (createHash('sha256').update(data).digest('hex') !== reference.sha256) throw new Error('Unreviewed PDF edition');
+  return data;
+}
 
 /** Serve only explicitly catalogued PDFs, never arbitrary private files. */
 export function referenceCharts(): Plugin {
@@ -16,8 +26,8 @@ export function referenceCharts(): Plugin {
         }
         if (route === '/') {
           const available = await Promise.all(CHART_REFERENCES.map(async reference => {
-            const info = await stat(path.join(directory, reference.filename)).catch(() => null);
-            return { id: reference.id, local: Boolean(info?.isFile() && info.size <= 60 * 1024 * 1024) };
+            const local = await reviewedPdf(directory, reference).then(() => true, () => false);
+            return { id: reference.id, local };
           }));
           response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
           response.end(request.method === 'HEAD' ? undefined : JSON.stringify(available)); return;
@@ -25,12 +35,9 @@ export function referenceCharts(): Plugin {
         const reference = CHART_REFERENCES.find(item => route === `/${item.id}.pdf`);
         if (!reference) { response.writeHead(404); response.end(); return; }
         try {
-          const filename = path.join(directory, reference.filename);
-          const info = await stat(filename);
-          if (!info.isFile() || info.size > 60 * 1024 * 1024) throw new Error('Invalid reference PDF');
-          const data = request.method === 'HEAD' ? undefined : await readFile(filename);
-          response.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': info.size, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
-          response.end(data);
+          const data = await reviewedPdf(directory, reference);
+          response.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': data.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+          response.end(request.method === 'HEAD' ? undefined : data);
         } catch {
           if (!response.headersSent) response.writeHead(404);
           response.end();
