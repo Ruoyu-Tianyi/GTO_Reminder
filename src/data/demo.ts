@@ -49,7 +49,7 @@ export const DEMO_DATASET = validateDataset({
   id: 'gto-reminder-ui-demo-v1',
   name: 'UI demo — not solver output',
   source: {
-    name: 'GTO_Reminder synthetic interface fixtures',
+    name: 'GTO Reminder synthetic interface fixtures',
     url: 'https://github.com/Ruoyu-Tianyi/GTO_Reminder',
     license: 'Project-authored synthetic fixtures for UI demonstration only. Not a solved GTO strategy.',
     retrievedAt: '2026-09-26',
