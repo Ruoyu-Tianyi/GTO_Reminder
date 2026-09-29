@@ -6,6 +6,7 @@ import type { ViteDevServer } from 'vite';
 import { DEMO_DATASET } from '../src/data/demo';
 import type { Dataset } from '../src/lib/poker';
 import { localDatasets } from './local-datasets';
+import { createTreeTemplate } from '../src/lib/tree-strategy';
 
 type ResponseHeaders = Record<string, string>;
 type Handler = (
@@ -82,7 +83,7 @@ describe('personal local dataset endpoint', () => {
     const result = await app.request();
     expect(result.status).toBe(200);
     expect(result.headers).toEqual({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-    expect(JSON.parse(result.body!)).toEqual({ datasets: [], errors: [] });
+    expect(JSON.parse(result.body!)).toEqual({ datasets: [], treeDatasets: [], errors: [] });
     expect(result.next).not.toHaveBeenCalled();
     expect(result.end).toHaveBeenCalledOnce();
   });
@@ -142,7 +143,7 @@ describe('personal local dataset endpoint', () => {
     const result = await app.request();
     expect(result.status).toBe(500);
     expect(result.headers['Cache-Control']).toBe('no-store');
-    expect(JSON.parse(result.body!)).toEqual({ datasets: [], errors: ['The local strategy folder could not be read.'] });
+    expect(JSON.parse(result.body!)).toEqual({ datasets: [], treeDatasets: [], errors: ['The local strategy folder could not be read.'] });
     expect(result.body).not.toContain(app.root);
     expect(result.end).toHaveBeenCalledOnce();
   });
@@ -154,6 +155,21 @@ describe('personal local dataset endpoint', () => {
     expect(result.headers.Allow).toBe('GET');
     expect(result.body).toBe('');
     expect(result.next).not.toHaveBeenCalled();
+  });
+
+  it('separates validated legacy files and tree files, sharing duplicate ID checks', async () => {
+    const app = await harness();
+    const tree = createTreeTemplate({ players: 7, stackBb: 100, anteBb: 0, format: 'cash', rake: 'test only' }, []);
+    tree.id = 'tree-fixture';
+    await app.put('a-tree.json', tree);
+    await app.put('b-legacy.json', fixture('legacy-fixture'));
+    await app.put('c-duplicate.json', fixture('tree-fixture'));
+    const result = await app.request();
+    const body = JSON.parse(result.body!);
+    expect(body.treeDatasets.map((item: { id: string }) => item.id)).toEqual(['tree-fixture']);
+    expect(body.datasets.map((item: { id: string }) => item.id)).toEqual(['legacy-fixture']);
+    expect(body.errors).toEqual(['c-duplicate.json: Dataset ID is reserved or already loaded.']);
+    expect(body.treeDatasets[0].nodes[0].hands.AA).toEqual({ status: 'missing' });
   });
 
   it.each(['/other', '/../secret.json', '/nested/data.json'])('passes unexpected subpath %s through without reading a file', async (url) => {
