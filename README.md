@@ -1,16 +1,18 @@
 # GTO Reminder
 
-**v0.2 正在建设 6–9 人完整翻前工作台，尚未完成全部精确 GTO 数据覆盖。** 已接入本地专业出版图的简化 Open 频率，并增加完整行动历史和 v2 策略格式。出版图、用户导入和合成演示始终区分；缺失数据不补成建议。
+**v0.2 正在建设 6–9 人完整翻前工作台，尚未完成全部精确 GTO 数据覆盖。** 已接入本地专业出版图的简化 Open 和 Facing Open 频率，并增加完整行动历史和 v2 策略格式。出版图、用户导入和合成演示始终区分；缺失数据不补成建议。
 
 ## v0.2 三种工作方式
 
-- **Published ranges**：可查询 13 个出版 RFI 图（6 人 5 个位置、9 人 8 个位置，共 2,197 格），保持原稿 0/50/100% 精度；6 人 SB 支持 Limp。数据只在本地保存，7/8 人数值 Open 图仍缺失，不跨人数复用。见[转录说明](docs/REFERENCE_TRANSCRIPTION.md)。
+- **Published ranges**：可查询 64 张出版范围图（13 张 Open、51 张 Facing Open，共 10,816 格）。6 人局 20 张、9 人局 44 张，按双方位置查询 Raise / 3-Bet、Call、Fold，保持原稿 0/50/100% 精度；6 人 SB Open 支持 Limp。每张图保留原稿尺寸，可直接对照 PDF；9 人 BB vs UTG+2 原图未标 3-Bet 尺寸，页面明确提示。数据只在本地保存，7/8 人数值图仍缺失，不跨人数复用。见[转录说明](docs/REFERENCE_TRANSCRIPTION.md)。
 - **Action history**：6–9 人按顺序记录 Fold / Check / Call / 多尺寸 Raise，覆盖 Limp、Cold Call、Squeeze、All-in 等行动流程；支持不同座位后手。频率只在完整历史和条件命中 v2 数据时显示。见[v2 格式](docs/DATA_FORMAT_V2.md)。
 - **Quick lookup**：保留 v1 快捷矩阵、4 个合成演示节点及 v1 导入。
 
 完整行动规则支持不等于全部节点已有解；7 人完整公开包和多数非 RFI 原始频率仍待获取。
 
-GTO_Reminder 希望把成熟的德州扑克策略数据整理成易用的网页工具：选择人数、位置、后手和前序行动，查看范围矩阵，并按手牌查询 Open、Call Open、3-Bet、Call 3-Bet、4-Bet 等动作频率。先把翻前查询做可靠，再逐步扩展至翻后。
+本轮新增数据的复现方式见 [Facing Open 转录](docs/RESPONSE_TRANSCRIPTION.md)，后续 3-Bet 图的手牌缺失与到达率边界见[数据缺口](docs/RESPONSE_DATA_GAPS.md)。
+
+GTO Reminder 希望把成熟的德州扑克策略数据整理成易用的网页工具：选择人数、位置、后手和前序行动，查看范围矩阵，并按手牌查询 Open、Call Open、3-Bet、Call 3-Bet、4-Bet 等动作频率。先把翻前查询做可靠，再逐步扩展至翻后。
 
 [GitHub repository](https://github.com/Ruoyu-Tianyi/GTO_Reminder) · [数据格式](docs/DATA_FORMAT.md) · [来源调研](docs/DATA_SOURCES.md) · [后续路线](docs/ROADMAP.md)
 

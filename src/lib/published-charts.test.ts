@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHART_REFERENCES } from '../data/references';
-import { HANDS, type Frequencies, type Position } from './poker';
-import { validatePublishedCharts } from './published-charts';
+import { HANDS, getPositions, type Frequencies, type Position } from './poker';
+import { REVIEWED_RESPONSE_CHARTS, validatePublishedCharts, type ReviewedResponseChart } from './published-charts';
 
 // Synthetic contract fixtures only. These frequencies are NOT poker advice,
 // transcribed publisher ranges, or a claimed solver output.
@@ -22,6 +22,24 @@ function fixture(players: 6 | 9 = 6, hero: Position = 'UTG') {
       source: { ...source }, precision: { step: 0.5, kind: 'publisher-simplified' }, frequencies,
       callMeaning: players === 6 && hero === 'SB' ? 'SB completion / limp' : 'unused',
       printedRaisePercent: 7.7, derivedRangeSummary: { raise: 1, call: 0, fold: 0 },
+    }],
+  };
+}
+
+function responseFixture(chart: ReviewedResponseChart = REVIEWED_RESPONSE_CHARTS[0]) {
+  const input = fixture(chart.players, chart.hero);
+  const source = input.sources[0];
+  const sourceVillain = chart.players === 6 && chart.villain === 'HJ' || chart.players === 9 && chart.villain === 'UTG+2' ? 'MP'
+    : chart.players === 9 && chart.villain === 'UTG+1' ? 'UTG1' : chart.villain;
+  return {
+    ...input,
+    sources: [{ id: source.id, name: source.name, title: source.title, url: source.url, sha256: source.sha256, localFile: source.localFile,
+      pages: chart.players === 6 ? [4, 5, 6, 7, 8] : [4, 5, 6, 7, 8, 9, 10] }],
+    nodes: [{ ...input.nodes[0], id: `synthetic-${chart.players}-${chart.hero.toLowerCase().replaceAll('+', '-')}-${chart.villain.toLowerCase().replaceAll('+', '-')}`,
+      sourcePosition: chart.players === 9 && chart.hero === 'UTG+1' ? 'UTG1' : input.nodes[0].sourcePosition,
+      kind: 'vs-open', villain: chart.villain, sourceVillain, facingRaiseToBb: chart.facingRaiseToBb,
+      raiseToBb: chart.raiseToBb, page: chart.page, callMeaning: 'Call Open',
+      printedRaisePercent: chart.raiseToBb === null ? null : 7.7, printedCallPercent: chart.raiseToBb === null || !chart.hasCallAction ? null : 12.3,
     }],
   };
 }
@@ -171,5 +189,132 @@ describe('validatePublishedCharts', () => {
     ['missing nodes', { nodes: [] }],
   ])('rejects root %s', (_label, patch) => {
     expect(() => validatePublishedCharts({ ...fixture(), ...patch })).toThrow();
+  });
+});
+
+describe('published Facing Open charts', () => {
+  it('whitelists exactly 15 six-max and 36 nine-max reviewed matchups', () => {
+    expect(REVIEWED_RESPONSE_CHARTS).toHaveLength(51);
+    for (const players of [6, 9] as const) {
+      const reviewed = REVIEWED_RESPONSE_CHARTS.filter(chart => chart.players === players);
+      expect(reviewed).toHaveLength(players * (players - 1) / 2);
+      const expected = getPositions(players).flatMap((hero, index, positions) => positions.slice(0, index).map(villain => `${hero}:${villain}`));
+      expect(reviewed.map(chart => `${chart.hero}:${chart.villain}`).sort()).toEqual(expected.sort());
+    }
+  });
+
+  it('accepts all 51 reviewed source contexts without inventing frequencies', () => {
+    const input = responseFixture();
+    input.sources.push(responseFixture(REVIEWED_RESPONSE_CHARTS.find(chart => chart.players === 9)!).sources[0]);
+    input.nodes = REVIEWED_RESPONSE_CHARTS.map(chart => responseFixture(chart).nodes[0]);
+    const result = validatePublishedCharts(input);
+    expect(result.nodes).toHaveLength(51);
+    expect(result.nodes.every(node => node.kind === 'vs-open' && node.callMeaning === 'Call Open')).toBe(true);
+    expect(result.nodes.reduce((count, node) => count + Object.keys(node.frequencies).length, 0)).toBe(8619);
+  });
+
+  it('recomputes Call Open summaries with combo weights and keeps printed aggregates separate', () => {
+    const input = responseFixture(REVIEWED_RESPONSE_CHARTS.find(chart => chart.players === 6 && chart.hero === 'BTN')!);
+    input.nodes[0].frequencies.AKo = { raise: 0, call: 0.5, fold: 0.5 };
+    const node = validatePublishedCharts(input).nodes[0];
+    expect(node.kind).toBe('vs-open');
+    expect(node.callMeaning).toBe('Call Open');
+    expect(node.derivedRangeSummary.call).toBeCloseTo(6 / 1326, 14);
+    expect(node.derivedRangeSummary.raise).toBeCloseTo(8 / 1326, 14);
+    expect(node.printedRaisePercent).toBe(7.7);
+    expect(node.ante).toBeNull();
+    expect(node.rake).toBeNull();
+  });
+
+  it('keeps the UTG1 response alias distinct from the UTG+1 RFI label', () => {
+    const response = validatePublishedCharts(responseFixture(REVIEWED_RESPONSE_CHARTS.find(chart => chart.players === 9 && chart.hero === 'UTG+1')!)).nodes[0];
+    const rfi = validatePublishedCharts(fixture(9, 'UTG+1')).nodes[0];
+    expect(response.hero).toBe('UTG+1');
+    expect(response.sourcePosition).toBe('UTG1');
+    expect(rfi.sourcePosition).toBe('UTG+1');
+    const withOpener = validatePublishedCharts(responseFixture(REVIEWED_RESPONSE_CHARTS.find(chart => chart.players === 9 && chart.villain === 'UTG+1')!)).nodes[0];
+    if (withOpener.kind === 'vs-open') expect(withOpener.sourceVillain).toBe('UTG1');
+  });
+
+  it('retains explicit zero calls on the seven charts that show only Raise and Fold', () => {
+    const withoutCalls = REVIEWED_RESPONSE_CHARTS.filter(chart => !chart.hasCallAction);
+    expect(withoutCalls).toHaveLength(7);
+    for (const chart of withoutCalls) {
+      const input = responseFixture(chart);
+      const node = validatePublishedCharts(input).nodes[0];
+      expect(node.derivedRangeSummary.call).toBe(0);
+      if (node.kind === 'vs-open') expect(node.printedCallPercent).toBeNull();
+      input.nodes[0].frequencies.AKs = { raise: 0, call: 0.5, fold: 0.5 };
+      expect(() => validatePublishedCharts(input)).toThrow(/only Raise and Fold/);
+    }
+  });
+
+  it('preserves the missing 9-max BB versus UTG+2 legend as null', () => {
+    const chart = REVIEWED_RESPONSE_CHARTS.find(chart => chart.players === 9 && chart.hero === 'BB' && chart.villain === 'UTG+2')!;
+    const input = responseFixture(chart);
+    const node = validatePublishedCharts(input).nodes[0];
+    expect(node.kind).toBe('vs-open');
+    expect(node.raiseToBb).toBeNull();
+    expect(node.printedRaisePercent).toBeNull();
+    if (node.kind === 'vs-open') expect(node.printedCallPercent).toBeNull();
+    Object.assign(input.nodes[0], { raiseToBb: 13, printedRaisePercent: 4, printedCallPercent: 30 });
+    expect(() => validatePublishedCharts(input)).toThrow(/Raise size/);
+  });
+
+  it('does not infer missing legend percentages while retaining a null raise size', () => {
+    const chart = REVIEWED_RESPONSE_CHARTS.find(chart => chart.raiseToBb === null)!;
+    const input = responseFixture(chart);
+    input.nodes[0].printedCallPercent = 0;
+    expect(() => validatePublishedCharts(input)).toThrow(/missing legend/);
+  });
+
+  it('keeps published fractional sizes exactly instead of rounding them', () => {
+    const chart = REVIEWED_RESPONSE_CHARTS.find(chart => chart.raiseToBb === 8.48)!;
+    const input = responseFixture(chart);
+    expect(validatePublishedCharts(input).nodes[0].raiseToBb).toBe(8.48);
+    input.nodes[0].raiseToBb = 8.5;
+    expect(() => validatePublishedCharts(input)).toThrow(/Raise size/);
+  });
+
+  it.each([
+    ['opener after Hero', { villain: 'BB', sourceVillain: 'BB' }],
+    ['Hero is opener', { villain: 'HJ', sourceVillain: 'MP' }],
+    ['missing opponent', { villain: undefined }],
+    ['wrong source alias', { sourceVillain: 'MP' }],
+    ['different open size', { facingRaiseToBb: 3 }],
+    ['different chart page', { page: 8 }],
+    ['unknown known raise', { raiseToBb: null }],
+    ['unknown known aggregate', { printedRaisePercent: null }],
+    ['invalid Call aggregate', { printedCallPercent: 101 }],
+    ['limp semantics', { callMeaning: 'SB completion / limp' }],
+  ])('rejects mismatched response metadata: %s', (_label, patch) => {
+    const chart = REVIEWED_RESPONSE_CHARTS.find(chart => chart.players === 6 && chart.hero === 'HJ' && chart.villain === 'UTG')!;
+    const input = responseFixture(chart);
+    Object.assign(input.nodes[0], patch);
+    expect(() => validatePublishedCharts(input)).toThrow();
+  });
+
+  it('rejects a response root with incorrect reviewed source pages', () => {
+    const input = responseFixture();
+    input.sources[0].pages = [4, 5, 6, 7, 9];
+    expect(() => validatePublishedCharts(input)).toThrow(/source pages/);
+  });
+
+  it('rejects a duplicated matchup under a new id', () => {
+    const input = responseFixture();
+    input.nodes.push({ ...input.nodes[0], id: 'synthetic-duplicate-response' });
+    expect(() => validatePublishedCharts(input)).toThrow(/Duplicate/);
+  });
+
+  it('rejects response artifacts that try to label an RFI node as Facing Open', () => {
+    const input = responseFixture();
+    Object.assign(input.nodes[0], { kind: 'rfi' });
+    expect(() => validatePublishedCharts(input)).toThrow();
+  });
+
+  it('rejects explicit opponent metadata on an RFI chart', () => {
+    const input = fixture();
+    Object.assign(input.nodes[0], { villain: 'SB', facingRaiseToBb: 3 });
+    expect(() => validatePublishedCharts(input)).toThrow(/RFI charts cannot/);
   });
 });

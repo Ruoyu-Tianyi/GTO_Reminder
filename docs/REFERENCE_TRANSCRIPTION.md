@@ -1,5 +1,7 @@
 # 公开参考图的 RFI 转录
 
+另见 [Facing Open 转录](RESPONSE_TRANSCRIPTION.md)：2026-09-30 新增 51 张响应图，合计可查询 64 张、10,816 格。本文件继续记录原 13 张 RFI 的固定版本。
+
 `scripts/transcribe-reference-rfi.py` 将已经人工核对的 RangeConverter Cash 100BB PDF 第 3 页转录为本地 `derived-chart-ranges.json`。它只重现出版者简化后的 **0 / 50 / 100%** 牌格，不恢复原始 solver 精度，也不生成缺失节点。
 
 ## 使用
