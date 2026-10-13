@@ -4,6 +4,8 @@
 
 新增 **Data coverage / 数据覆盖**：按人数查看参考场景、未知手牌和计算模型，可直接进入参考范围或完整历史，刷新并导出不含策略频率的清单。新补 9 人最多三次加注研究包，含 284 个决策、全部 36 组面对 4-Bet 的位置组合，仍未确认收敛；它排除了 5-Bet，面对 4-Bet 只有 Fold/Call。求解工具现支持重启后核验存档并追加计算，见[存档恢复说明](docs/LOCAL_SOLVER.md)。
 
+新增 **我的收藏**：三个工作台的条件、手牌、完整历史和来源可保存、导入与导出；来源缺失或改变时保留查询，不自动换用其他频率。**全压应对**可在明确对手范围及抽水后计算跟注 EV、采样区间和 169 类手牌矩阵，仍不属于 GTO 频率。使用方式见[收藏与全压分析](docs/STUDY_TOOLS.md)。
+
 ## v0.2 三种工作方式
 
 - **Reference ranges**：保留 6／9 人的 64 张简化 Open／Facing Open 图；新增 8 人 119 张图，覆盖 Open、面对 Open／3／4／5-Bet、BB 对 SB Limp。8 人色条按图片测量，约 ±2 个百分点；未显示的手牌保留未知。7 人 91 张为从 8 人移除最早座位的投影估算，明确标记 `ESTIMATED`，没有重新求解。6／9 人 Facing 3-Bet 的保守转录只显示可核验手牌。见[8 人转录](docs/POKERCOACHING_TRANSCRIPTION.md)。
@@ -94,11 +96,14 @@ python scripts/pack-local-data.py
 # 输出 data/private/exports/日期时间-bundle.zip 的实际路径
 # 将下列路径替换为生成的包；复制至目标电脑后再次校验
 python scripts/pack-local-data.py --verify "D:/transfer/实际文件名-bundle.zip"
+# 在目标项目先预览，再恢复；已有相同文件跳过，任何内容冲突均拒绝
+python scripts/pack-local-data.py --restore "D:/transfer/实际文件名-bundle.zip" --dry-run
+python scripts/pack-local-data.py --restore "D:/transfer/实际文件名-bundle.zip"
 ```
 
 包仅包含当前 `computed-*.tree.json` / `*.quick.json`、五份参考转录 JSON、三份已知原 PDF 及 `solver-audits/` 顶层 JSON。清单记录每项相对路径、SHA-256 和字节数，保存在包内 `data/private/exports/bundle-manifest.json`。工具核对所有条目与清单、必需参考文件、哈希和大小，并在打包期间拒绝变化的源文件；`--verify` 只读取，不自动解压或覆盖。它不收集 `.runtime/`、引擎依赖、完整求解存档、日志或其他私人文件，也不上传数据。
 
-数据包仅用于本人设备间复制，不上传或公开。在目标电脑克隆或更新源码、校验数据包后，建议将 ZIP **手动解压到没有同名数据的新 clone 项目根目录**，使其中的 `data/private/...` 落入项目的 `data/private/`。如果目标已有数据，先备份原 `data/private/`，再手动核对和合并需要的版本。源码继续通过 Git 同步，数据包与恢复的数据继续被 Git 忽略。重新启动本地服务或刷新页面后加载数据。包校验确认传输完整性，不替代来源许可或策略质量核验。
+数据包用于本人设备间复制。恢复工具预先校验全部条目，保留固定备份与操作日志，仅新增文件；失败时只撤回本次创建且未被修改的文件。恢复期间数据接口暂停读取，完成后刷新页面。发生冲突或中断时见[数据迁移与回滚](docs/DATA_MIGRATION.md)，不要直接覆盖目录或手动删锁。源码继续通过 Git 同步，数据包与恢复的数据继续被 Git 忽略。包校验确认传输完整性，不替代策略质量核验。
 
 ### 手动导入
 
@@ -106,7 +111,7 @@ python scripts/pack-local-data.py --verify "D:/transfer/实际文件名-bundle.z
 2. 按[数据格式说明](docs/DATA_FORMAT.md)填入获授权的数据、完整场景条件和来源信息。下载模板仍是演示数据，不能只修改名称就当作 solver 输出。
 3. 点击 `Import JSON` 导入，再从 `Covered spots` 选择场景。
 
-导入文件只在当前页面的内存中处理，**刷新页面后清空**；应用不会上传范围到服务器或 GitHub。语言偏好单独保存在浏览器本地。
+导入的策略文件只在当前页面的内存中处理，**刷新页面后清空**；应用不会上传范围到服务器或 GitHub。语言偏好与查询收藏保存在浏览器本地；收藏不包含策略频率。
 
 本地开发模式也会读取 `data/private/` 顶层的标准 JSON 文件（单文件上限 20 MB），经过相同校验后加入列表，刷新页面会再次载入。该目录已被 Git 忽略，不进入生产构建。无效文件在数据面板中提示，并不影响其他有效文件。数据面板提供 5–9 人场景覆盖统计和缺失清单；计数不含演示或 PDF，也不等于整个翻前行动树。
 

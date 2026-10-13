@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 import { projectSevenMax, validateReferenceRanges, type ReferenceRangesResponse } from '../src/lib/reference-ranges';
+import { beginPrivateDataRead, stopForPrivateDataRestore } from './private-data-lock';
 
 // Updated only after running the transcription and checking the source/hand audit.
 export const POKERCOACHING_RANGES_SHA256 = '249ec25b4efea0d1f4a1c6ac736e7333dfd2993f40e4e3e1f663311af3825cde';
@@ -39,7 +40,10 @@ export function referenceRanges(): Plugin {
       const route = (request.url ?? '/').split('?')[0];
       if (route !== '/' && route !== '') { response.writeHead(404); response.end(); return; }
       if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405, { Allow: 'GET, HEAD' }); response.end(); return; }
+      const version = await beginPrivateDataRead(server.config.root, request.method, response);
+      if (!version) return;
       const body = JSON.stringify(await loadReferenceRanges(server.config.root));
+      if (await stopForPrivateDataRestore(server.config.root, request.method, response, version)) return;
       response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : body);
     });

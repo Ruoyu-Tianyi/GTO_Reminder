@@ -175,7 +175,7 @@ function finiteNumber(value: unknown, path: string, min: number, max = Infinity)
   return value;
 }
 
-function validateSpot(value: unknown, path: string): Spot {
+export function validateSpot(value: unknown, path: string): Spot {
   const raw = record(value, path);
   const players = finiteNumber(raw.players, `${path}.players`, 2, 9);
   const positions = getPositions(players);
@@ -204,7 +204,7 @@ function validateSpot(value: unknown, path: string): Spot {
   return { players, hero, villain, stackBb, kind, openSizeBb, threeBetSizeBb, fourBetSizeBb, format: raw.format, anteBb, rake };
 }
 
-function validateActionSizes(spot: Spot, hasRaise: boolean, path: string): void {
+export function validateActionSizes(spot: Spot, hasRaise: boolean, path: string): void {
   function checkRaise(field: 'openSizeBb' | 'threeBetSizeBb' | 'fourBetSizeBb', previousBet: number, previousIncrement: number) {
     const size = spot[field];
     if (size > spot.stackBb) throw new Error(`${path}.${field} exceeds the effective stack for an action in this node.`);

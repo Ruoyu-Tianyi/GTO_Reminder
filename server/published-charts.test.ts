@@ -6,7 +6,7 @@ import { HANDS } from '../src/lib/poker';
 import { REVIEWED_RESPONSE_CHARTS } from '../src/lib/published-charts';
 import { loadPublishedCharts, loadPublishedResponseCharts, loadAllPublishedCharts, publishedCharts, PUBLISHED_CHARTS_SHA256, PUBLISHED_RESPONSE_CHARTS_SHA256 } from './published-charts';
 
-const fs = vi.hoisted(() => ({ stat: vi.fn(), readFile: vi.fn() }));
+const fs = vi.hoisted(() => ({ stat: vi.fn(), readFile: vi.fn(), lstat: vi.fn() }));
 vi.mock('node:fs/promises', () => fs);
 
 // Entirely synthetic frequencies for API contract tests, not publisher data.
@@ -43,7 +43,10 @@ function responseFixture() {
 function setFile(text: string) {
   const bytes = Buffer.from(text, 'utf8');
   fs.stat.mockResolvedValue({ size: bytes.length, isFile: () => true });
-  fs.readFile.mockResolvedValue(bytes);
+  fs.readFile.mockImplementation(async (filename: string) => {
+    if (filename === FILE || filename === RESPONSE_FILE) return bytes;
+    throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+  });
   return createHash('sha256').update(bytes).digest('hex');
 }
 function setFiles(rfi?: string, responses?: string) {
@@ -55,14 +58,18 @@ function setFiles(rfi?: string, responses?: string) {
     if (!bytes) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     return { size: bytes.length, isFile: () => true };
   });
-  fs.readFile.mockImplementation(async (filename: string) => files.get(filename));
+  fs.readFile.mockImplementation(async (filename: string) => {
+    const bytes = files.get(filename);
+    if (!bytes) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    return bytes;
+  });
   return {
     rfi: rfi === undefined ? PUBLISHED_CHARTS_SHA256 : createHash('sha256').update(rfi).digest('hex'),
     vsOpen: responses === undefined ? PUBLISHED_RESPONSE_CHARTS_SHA256 : createHash('sha256').update(responses).digest('hex'),
   };
 }
 
-beforeEach(() => { vi.clearAllMocks(); fs.stat.mockReset(); fs.readFile.mockReset(); });
+beforeEach(() => { vi.clearAllMocks(); fs.stat.mockReset(); fs.readFile.mockReset(); fs.lstat.mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' })); });
 
 describe('loadPublishedCharts', () => {
   it('reads only the fixed local path and passes data through validation', async () => {

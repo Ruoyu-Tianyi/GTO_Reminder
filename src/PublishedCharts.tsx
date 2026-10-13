@@ -5,26 +5,31 @@ import type { PublishedChartsResponse } from './lib/published-charts';
 import { referenceVillains, type ReferenceKind, type ReferenceRange, type ReferenceRangesResponse } from './lib/reference-ranges';
 import { displayPublishedChart, REFERENCE_KIND_LABELS, referenceActionColor } from './lib/display-ranges';
 import LocalCalculation from './LocalCalculation';
+import type { StudyQuery } from './lib/study-session';
+import { bindStudyReference, matchesStudyReference } from './lib/study-bindings';
 
 type Translate = (en: string, zh: string) => string;
 const HATCH = 'repeating-linear-gradient(135deg,#f6f7f4 0px,#f6f7f4 5px,#d7ded0 5px,#d7ded0 6px)';
 
 export type ReferenceSelection = Pick<ReferenceRange, 'players' | 'kind' | 'hero' | 'villain'>;
 
-export default function PublishedCharts({ t, onReference, initialSelection }: { t: Translate; onReference: (id: string, page: number) => void; initialSelection?: ReferenceSelection }) {
+export default function PublishedCharts({ t, onReference, initialSelection, initialStudy, onSave }: { t: Translate; onReference: (id: string, page: number) => void; initialSelection?: ReferenceSelection; initialStudy?: Extract<StudyQuery, {view: 'reference'}>; onSave: (query: StudyQuery, label: string) => void }) {
   const [nodes, setNodes] = useState<ReferenceRange[]>([]);
   const [players, setPlayers] = useState(initialSelection?.players ?? 8);
   const [kind, setKind] = useState<ReferenceKind>(initialSelection?.kind ?? 'rfi');
   const [selectedHero, setHero] = useState<Position>(initialSelection?.hero ?? 'BTN');
   const [selectedVillain, setVillain] = useState<Position>(initialSelection?.villain ?? 'UTG');
-  const [query, setQuery] = useState('AKs');
+  const [query, setQuery] = useState(initialStudy?.hand ?? 'AKs');
+  const [expectedSource, setExpectedSource] = useState(initialStudy ? initialStudy.binding : undefined);
   const [loading, setLoading] = useState(import.meta.env.DEV);
   const [errors, setErrors] = useState<string[]>([]);
   const heroes = getPositions(players).filter(position => kind === 'rfi' ? position !== 'BB' : referenceVillains(players, position, kind).length > 0);
   const hero = heroes.includes(selectedHero) ? selectedHero : heroes[0];
   const villains = referenceVillains(players, hero, kind);
   const villain = kind === 'rfi' ? null : villains.includes(selectedVillain) ? selectedVillain : villains[0];
-  const node = nodes.find(item => item.players === players && item.kind === kind && item.hero === hero && item.villain === villain);
+  const candidate = nodes.find(item => item.players === players && item.kind === kind && item.hero === hero && item.villain === villain);
+  const sourceMismatch = expectedSource !== undefined && (!expectedSource || !candidate || !matchesStudyReference(expectedSource, candidate));
+  const node = sourceMismatch ? undefined : candidate;
   const hand = normalizeHand(query);
   const row = hand ? node?.hands[hand] : undefined;
   const actions = node?.actions ?? [];
@@ -62,6 +67,7 @@ export default function PublishedCharts({ t, onReference, initialSelection }: { 
   }, []);
 
   return <div className="published-workspace">
+    <div className="study-toolbar"><button className="secondary-button" disabled={!hand || loading} onClick={() => hand && onSave({ view: 'reference', selection: {players, kind, hero, villain}, hand, binding: node ? bindStudyReference(node) : expectedSource ?? null }, `${players}-max · ${title} · ${hand}`)}>{t('Save this spot', '收藏当前场景')}</button>{sourceMismatch && !loading && <p role="status">{t('Saved query restored. Its source is missing or has changed; no replacement frequencies are shown.', '已恢复收藏条件，原来源未载入或已更新，当前不展示替代频率。')}{candidate && <button className="text-button" onClick={() => setExpectedSource(undefined)}>{t('Use the current source', '改用当前来源')}</button>}</p>}</div>
     <div className={`tree-intro ${players === 7 ? 'estimate-intro' : ''}`}><BookOpen size={21}/><div>
       <strong>{t('Reference ranges · Cash 100 BB', '翻前参考范围 · Cash 100 BB')}</strong>
       <p>{t('6/9-max: published 50% steps. 8-max: measured chart bars. 7-max: explicitly estimated from 8-max seat order. Source precision and missing hands stay visible.', '6／9 人保留出版的 50% 粒度；8 人从原图色条测量；7 人由 8 人座位顺序投影估算。逐图标明精度与缺失手牌。')}</p>
@@ -71,12 +77,12 @@ export default function PublishedCharts({ t, onReference, initialSelection }: { 
         <div className="panel-heading"><h2>{t('Choose a reference', '选择参考范围')}</h2><BookOpen size={17}/></div>
         <div className="tree-setup">
           <div className="two-fields">
-            <label>{t('Players', '人数')}<select aria-label="Published chart players" value={players} onChange={event => setPlayers(Number(event.target.value))}>{[6,7,8,9].map(count => <option value={count} key={count}>{count}-max</option>)}</select></label>
-            <label>{t('Situation', '场景')}<select aria-label="Published chart situation" value={kind} onChange={event => setKind(event.target.value as ReferenceKind)}>{Object.entries(REFERENCE_KIND_LABELS).map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+            <label>{t('Players', '人数')}<select aria-label="Published chart players" value={players} onChange={event => { setExpectedSource(undefined); setPlayers(Number(event.target.value)); }}>{[6,7,8,9].map(count => <option value={count} key={count}>{count}-max</option>)}</select></label>
+            <label>{t('Situation', '场景')}<select aria-label="Published chart situation" value={kind} onChange={event => { setExpectedSource(undefined); setKind(event.target.value as ReferenceKind); }}>{Object.entries(REFERENCE_KIND_LABELS).map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
           </div>
           <div className="two-fields published-positions">
-            <label>{t('Your position', '你的位置')}<select aria-label="Published chart position" value={hero} onChange={event => setHero(event.target.value as Position)}>{heroes.map(position => <option key={position}>{position}</option>)}</select></label>
-            {kind !== 'rfi' && <label>{t('Opponent', '对手位置')}<select aria-label="Published chart opener" value={villain ?? ''} onChange={event => setVillain(event.target.value as Position)}>{villains.map(position => <option key={position}>{position}</option>)}</select></label>}
+            <label>{t('Your position', '你的位置')}<select aria-label="Published chart position" value={hero} onChange={event => { setExpectedSource(undefined); setHero(event.target.value as Position); }}>{heroes.map(position => <option key={position}>{position}</option>)}</select></label>
+            {kind !== 'rfi' && <label>{t('Opponent', '对手位置')}<select aria-label="Published chart opener" value={villain ?? ''} onChange={event => { setExpectedSource(undefined); setVillain(event.target.value as Position); }}>{villains.map(position => <option key={position}>{position}</option>)}</select></label>}
           </div>
           <div className="published-conditions" aria-live="polite"><span>Cash · 100 BB · {REFERENCE_KIND_LABELS[kind]}</span>
             <strong>{sourceLabel}</strong>

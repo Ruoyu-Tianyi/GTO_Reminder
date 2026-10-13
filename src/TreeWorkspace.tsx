@@ -7,8 +7,11 @@ import { createTreeTemplate, findTreeNode, gameKey, treeRangeSummary, validateTr
 import './tree.css';
 import { findHistoryReferences } from './lib/tree-references';
 import LocalCalculation from './LocalCalculation';
+import AllInCalculation from './AllInCalculation';
 import ComputationNotice from './ComputationNotice';
 import { inventoryPackKey } from './lib/data-inventory';
+import { bindStudyDataset, matchesStudyDataset } from './lib/study-bindings';
+import type { StudyDatasetBinding, StudyQuery } from './lib/study-session';
 
 type Translate = (en: string, zh: string) => string;
 const INITIAL_GAME: TreeGame = { players: 6, stackBb: 100, anteBb: 0, format: 'cash', rake: '5% · 3 BB cap' };
@@ -23,7 +26,8 @@ function saveJson(value: unknown, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function TreeWorkspace({ t, onReference, openRequest }: { t: Translate; onReference: (id: string, page: number) => void; openRequest?: { id: string; version: number } }) {
+export type TreeOpenRequest = { version: number; id?: string; study?: Extract<StudyQuery, {view: 'tree'}> };
+export default function TreeWorkspace({ t, onReference, openRequest, onSave }: { t: Translate; onReference: (id: string, page: number) => void; openRequest?: TreeOpenRequest; onSave: (query: StudyQuery, label: string) => void }) {
   const [game, setGame] = useState<TreeGame>(INITIAL_GAME);
   const [history, setHistory] = useState<PreflopAction[]>(() => buildPreset(INITIAL_GAME, 'unopened'));
   const [raiseTo, setRaiseTo] = useState('2.5');
@@ -41,6 +45,7 @@ export default function TreeWorkspace({ t, onReference, openRequest }: { t: Tran
   const [unequal, setUnequal] = useState(false);
   const [preset, setPreset] = useState<LinePreset | ''>('unopened');
   const [presetError, setPresetError] = useState('');
+  const [restoredBinding, setRestoredBinding] = useState<StudyDatasetBinding | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const openedRequest = useRef<number | undefined>(undefined);
   const uploadedIds = useRef(new Set<string>());
@@ -109,10 +114,41 @@ export default function TreeWorkspace({ t, onReference, openRequest }: { t: Tran
     datasetRequest.current?.abort(); setLoadingDataset(false); openedRequest.current = openRequest?.version;
   }
   useEffect(() => {
-    if (!openRequest || openedRequest.current === openRequest.version || !treeLibrary.some(item => item.id === openRequest.id)) return;
+    if (!openRequest || openedRequest.current === openRequest.version) return;
+    if (openRequest.study) {
+      openedRequest.current = openRequest.version;
+      void restoreStudy(openRequest.study);
+      return;
+    }
+    if (!openRequest.id || !treeLibrary.some(item => item.id === openRequest.id)) return;
     openedRequest.current = openRequest.version;
     void selectDataset(openRequest.id, true);
   }, [openRequest, treeLibrary]);
+
+  async function restoreStudy(saved: Extract<StudyQuery, {view: 'tree'}>) {
+    datasetRequest.current?.abort();
+    const controller = new AbortController(); datasetRequest.current = controller;
+    setGame(saved.game); setHistory(saved.history); setQuery(saved.hand); setUnequal(Boolean(saved.game.stacksBb));
+    setSelectedId(''); setPreset(''); setPresetError(''); setError(''); setMessage(''); setRestoredBinding(saved.binding);
+    const missing = t('Saved query restored. The original source is missing or has changed. Restore that dataset or select a new source explicitly.', '已恢复收藏条件，原来源未载入或已更新。请恢复相应数据，或主动选择新的来源。');
+    if (!saved.binding) { setLoadingDataset(false); setMessage(t('Saved query restored without a source. Select a dataset to see matching frequencies.', '已恢复未绑定来源的收藏条件，请选择数据集查看匹配频率。')); return; }
+    const binding = saved.binding;
+    const existing = datasets.find(item => matchesStudyDataset(binding, item));
+    if (existing && uploadedIds.current.has(existing.id)) { setSelectedId(existing.id); setLoadingDataset(false); return; }
+    if (uploadedIds.current.has(binding.datasetId) || !import.meta.env.DEV) { setLoadingDataset(false); setMessage(missing); return; }
+    setLoadingDataset(true);
+    try {
+      const response = await fetch(`/api/local-datasets?treeId=${encodeURIComponent(binding.datasetId)}`, {signal: controller.signal});
+      if (!response.ok) throw new Error(missing);
+      const result = await response.json() as {treeDatasets: unknown[]; errors: string[]};
+      if (controller.signal.aborted) return;
+      const incoming = result.treeDatasets.map(validateTreeDataset).find(item => matchesStudyDataset(binding, item));
+      if (!incoming) { setMessage(missing); return; }
+      setDatasets(current => [...current.filter(item => item.id !== incoming.id && (uploadedIds.current.has(item.id) || !treeLibrary.some(local => local.id === item.id))), incoming]);
+      setSelectedId(incoming.id);
+    } catch (error) { if (!controller.signal.aborted) setMessage(error instanceof Error ? error.message : missing); }
+    finally { if (!controller.signal.aborted) setLoadingDataset(false); }
+  }
   function changeGame(patch: Partial<TreeGame>) {
     cancelDatasetLoad(); setPreset('');
     setGame(current => ({ ...current, ...patch })); setHistory([]); setError(''); setMessage('');
@@ -131,6 +167,8 @@ export default function TreeWorkspace({ t, onReference, openRequest }: { t: Tran
     catch (error) { setPresetError(error instanceof Error ? error.message : 'This line is unavailable with these stacks.'); }
   }
   async function selectDataset(id: string, refresh = false) {
+    setRestoredBinding(null);
+    setMessage('');
     if (!refresh) openedRequest.current = openRequest?.version;
     if (refresh && uploadedIds.current.has(id)) {
       setError(t('This local model shares an ID with your temporary upload. Give the upload a unique ID before opening the disk copy; your upload has been kept.', '本地模型与临时上传使用同一 ID。请为上传文件更换唯一 ID 后再打开磁盘版本；已保留当前上传内容。'));
@@ -175,6 +213,7 @@ export default function TreeWorkspace({ t, onReference, openRequest }: { t: Tran
   }
 
   return <div className="tree-workspace">
+    <div className="study-toolbar"><button className="secondary-button" disabled={!hand || !state || loadingDataset} onClick={() => hand && onSave({view: 'tree', game, history, hand, binding: dataset ? bindStudyDataset(dataset) : restoredBinding}, `${game.players}-max · ${state?.nextActor ?? 'End'} · ${history.length} ${t('actions', '步行动')} · ${hand}`)}>{t('Save this spot', '收藏当前场景')}</button></div>
     <div className="tree-intro"><GitBranch size={21}/><div><strong>{t('Build the full preflop action history', '构建完整翻前行动历史')}</strong><p>{t('6–9 players · Cash · 100 BB first. Record real actions; strategy requires matching source data.', '6–9 人 · Cash · 优先 100 BB。记录实际行动，策略必须来自匹配条件的数据。')}</p></div><span>{t('RULES ≠ STRATEGY', '规则支持 ≠ 策略覆盖')}</span></div>
     <div className="tree-dataset-picker panel"><label>{t('Active dataset', '当前数据集')}<select value={selectedId} onChange={event => void selectDataset(event.target.value)}><option value="">{t('Select a source dataset', '选择来源数据集')}</option>{[...localPacks, ...datasets.filter(item => uploadedIds.current.has(item.id) || !treeLibrary.some(local => local.id === item.id))].map(item => <option key={item.id} value={item.id}>{item.name.replace(/ · part \d+\/\d+$/, "")}</option>)}</select></label>{loadingDataset && <p role="status" className="tree-muted">{t("Loading selected dataset…", "正在载入所选数据…")}</p>}</div>
     <div className="tree-layout">
@@ -211,6 +250,7 @@ export default function TreeWorkspace({ t, onReference, openRequest }: { t: Tran
       </aside>
     </div>
     {locatingNode && <p className="tree-message" role="status">{t('Looking up this history across the computed dataset…', '正在本机计算数据中查找完整行动历史…')}</p>}
+    <AllInCalculation t={t} game={game} history={history} hand={query}/>
     {state?.nextActor && <LocalCalculation key={JSON.stringify([game, history])} t={t} context={JSON.stringify({ game, history })} opponents={state.seats.filter(seat => !seat.folded).length - 1} hand={query}/>}
     {(stateError || error) && <p className="tree-error" role="alert">{stateError || error}</p>}
     {message && <p className="tree-message" role="status">{message}</p>}

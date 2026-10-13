@@ -2,12 +2,15 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronRight, CircleHelp, Database, Grid2X2, Info, Layers3, Plus, RotateCcw, Settings2, Spade, Upload, X } from 'lucide-react';
 import { DEMO_DATASET } from './data/demo';
 import ReferenceLibrary, { CoveragePanel, ReferenceSummary } from './ReferenceLibrary';
-import TreeWorkspace from './TreeWorkspace';
+import TreeWorkspace, { type TreeOpenRequest } from './TreeWorkspace';
 import PublishedCharts, { type ReferenceSelection } from './PublishedCharts';
 import DataInventory from './DataInventory';
 import LocalCalculation from './LocalCalculation';
 import ComputationNotice from './ComputationNotice';
 import QuickTreeLookup from './QuickTreeLookup';
+import StudyLibrary from './StudyLibrary';
+import { addStudyBookmark, emptyStudyCollection, loadStudyStorage, saveStudyStorage, type StudyCollection, type StudyQuery } from './lib/study-session';
+import { bindStudyDataset, matchesStudyDataset } from './lib/study-bindings';
 import { HANDS, comboCount, findNode, getPositions, getVillains, normalizeHand, rangeSummary, validateDataset, type Dataset, type Position, type Spot, type SpotKind } from './lib/poker';
 
 const INITIAL_SPOT: Spot = { players: 6, hero: 'BTN', villain: null, stackBb: 100, kind: 'rfi', openSizeBb: 2.5, threeBetSizeBb: 10, fourBetSizeBb: 22, format: 'cash', anteBb: 0, rake: '5% · 3 BB cap' };
@@ -15,6 +18,11 @@ const COLORS = { raise: '#a8d896', call: '#94c5e7', fold: '#edf0eb' };
 const SPOT_LABELS: Record<SpotKind, string> = { rfi: 'Open', 'vs-open': 'Facing Open', 'vs-3bet': 'Facing 3-Bet', 'vs-4bet': 'Facing 4-Bet' };
 const percent = (n: number) => `${(n * 100).toFixed(n > 0 && n < .01 ? 2 : 1)}%`;
 const spotTitle = (spot: Spot) => `${spot.hero}${spot.villain ? ` vs ${spot.villain}` : ''} · ${SPOT_LABELS[spot.kind]}`;
+const UNBOUND_DATASET: Dataset = { schemaVersion: 1, id: 'saved-query-no-source', name: 'Saved query · source unavailable', source: {name: 'No matching source', kind: 'imported', url: '', license: '', retrievedAt: ''}, nodes: [] };
+function initialStudyStorage() {
+  try { return loadStudyStorage(localStorage); }
+  catch { return { collection: emptyStudyCollection(), error: 'Browser storage is unavailable. Export bookmarks before leaving this page.' }; }
+}
 
 function download(data: unknown, filename: string) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
@@ -30,9 +38,14 @@ function normalizeSpot(spot: Spot): Spot {
 }
 
 export default function App() {
-  const [workspaceMode, setWorkspaceMode] = useState<'history' | 'quick' | 'published' | 'inventory'>('published');
-  const [rangeRequest, setRangeRequest] = useState<{ selection: ReferenceSelection; version: number }>();
-  const [treeRequest, setTreeRequest] = useState<{ id: string; version: number }>();
+  const [workspaceMode, setWorkspaceMode] = useState<'history' | 'quick' | 'published' | 'inventory' | 'study'>('published');
+  const [rangeRequest, setRangeRequest] = useState<{ selection: ReferenceSelection; version: number; study?: Extract<StudyQuery, {view: 'reference'}> }>();
+  const [treeRequest, setTreeRequest] = useState<TreeOpenRequest>();
+  const [savedQuick, setSavedQuick] = useState<Extract<StudyQuery, {view: 'quick'}>>();
+  const [initialStudy] = useState(initialStudyStorage);
+  const [studyCollection, setStudyCollection] = useState(initialStudy.collection);
+  const [studyError, setStudyError] = useState(initialStudy.error);
+  const [studyNotice, setStudyNotice] = useState('');
   const [referenceSelection, setReferenceSelection] = useState<{ id: string; page: number } | null>(null);
   const [spot, setSpot] = useState<Spot>(INITIAL_SPOT);
   const [hand, setHand] = useState('AKs');
@@ -50,22 +63,51 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const libraryButton = useRef<HTMLButtonElement>(null);
-  const dataset = datasets.find(d => d.id === datasetId) ?? DEMO_DATASET;
+  const quickImportVersion = useRef(0);
+  const selectedDataset = datasets.find(d => d.id === datasetId);
+  const unboundQuick = savedQuick !== undefined && (!savedQuick.binding || !selectedDataset || !matchesStudyDataset(savedQuick.binding, selectedDataset));
+  const dataset = unboundQuick ? UNBOUND_DATASET : selectedDataset ?? DEMO_DATASET;
   const node = findNode(dataset, spot);
   const frequencies = normalizeHand(query) ? node?.frequencies[hand] : undefined;
   const summary = node ? rangeSummary(node) : null;
   const isDemo = dataset.source.kind === 'demo';
-  const datasetLabel = dataset.source.kind === 'computed' ? 'COMPUTED · APPROXIMATE' : isDemo ? 'DEMO' : 'IMPORTED';
+  const datasetLabel = unboundQuick ? 'SOURCE UNAVAILABLE' : dataset.source.kind === 'computed' ? 'COMPUTED · APPROXIMATE' : isDemo ? 'DEMO' : 'IMPORTED';
   const positions = getPositions(spot.players);
   const villains = getVillains(spot.players, spot.hero, spot.kind);
   const t = (en: string, zh: string) => language === 'en' ? en : zh;
-  const changeSpot = (patch: Partial<Spot>) => { setSpot(s => normalizeSpot({ ...s, ...patch })); setFilter('all'); };
-  const selectHand = (value: string) => { setHand(value); setQuery(value); };
+  const changeSpot = (patch: Partial<Spot>) => { quickImportVersion.current++; setSpot(s => normalizeSpot({ ...s, ...patch })); setFilter('all'); };
+  const selectHand = (value: string) => { quickImportVersion.current++; setHand(value); setQuery(value); };
+  const editHand = (value: string) => { quickImportVersion.current++; setQuery(value); const normalized = normalizeHand(value); if (normalized) setHand(normalized); };
   const raiseLabel = spot.kind === 'rfi' ? 'Raise' : spot.kind === 'vs-open' ? '3-Bet' : spot.kind === 'vs-3bet' ? '4-Bet' : '5-Bet';
   const callLabel = 'Call';
   const visibleActions: ('raise' | 'call' | 'fold')[] = spot.kind === 'rfi' ? ['raise', 'fold'] : ['raise', 'call', 'fold'];
 
+  function updateStudy(collection: StudyCollection) {
+    setStudyCollection(collection);
+    try { const result = saveStudyStorage(localStorage, collection); setStudyError(result.error); }
+    catch { setStudyError(t('Browser storage is unavailable. Export your bookmarks to keep them.', '浏览器存储不可用，请导出收藏，以免关闭页面后丢失。')); }
+  }
+  function saveStudy(query: StudyQuery, label: string) {
+    try {
+      const result = addStudyBookmark(studyCollection, query, label);
+      updateStudy(result.collection);
+      setStudyNotice(result.added ? t('Spot saved. Open Saved spots to review or export it.', '场景已收藏，可在“我的收藏”中查看或导出。') : t('This exact query and source are already saved.', '相同场景和来源已在收藏中。'));
+    } catch (error) { setStudyNotice(error instanceof Error ? error.message : t('Could not save this spot.', '无法收藏该场景。')); }
+  }
+  function openStudy(query: StudyQuery) {
+    quickImportVersion.current++;
+    setStudyNotice('');
+    if (query.view === 'reference') {
+      setRangeRequest(current => ({ selection: query.selection, version: (current?.version ?? 0) + 1, study: query })); setWorkspaceMode('published');
+    } else if (query.view === 'tree') {
+      setTreeRequest(current => ({ study: query, version: (current?.version ?? 0) + 1 })); setWorkspaceMode('history');
+    } else {
+      setSavedQuick(query); setDatasetId(query.binding?.datasetId ?? ''); setSpot(query.spot); setHand(query.hand); setQuery(query.hand); setFilter('all'); setWorkspaceMode('quick');
+    }
+  }
+
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; try { localStorage.setItem('gto-language', language); } catch { /* preferences are optional */ } }, [language]);
+  useEffect(() => () => { quickImportVersion.current++; }, []);
   useEffect(() => { if (modal && !dialogRef.current?.open) dialogRef.current?.showModal(); if (!modal && dialogRef.current?.open) dialogRef.current.close(); }, [modal]);
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -82,22 +124,26 @@ export default function App() {
 
   async function importDataset(file: File | undefined) {
     if (!file) return;
+    const version = ++quickImportVersion.current;
     setImportError(''); setImportMessage('');
     try {
       if (file.size > 10 * 1024 * 1024) throw new Error(t('Please use a JSON file smaller than 10 MB.', '请使用小于 10 MB 的 JSON 文件。'));
-      const incoming = validateDataset(JSON.parse(await file.text()));
+      const json = await file.text();
+      if (version !== quickImportVersion.current) return;
+      const incoming = validateDataset(JSON.parse(json));
       if (incoming.id === DEMO_DATASET.id) throw new Error(t('The built-in demo is already available. Give your own dataset a unique ID.', '内置演示已存在，请为导入数据使用独立 ID。'));
       setDatasets(current => [...current.filter(d => d.id !== incoming.id), incoming]);
-      setDatasetId(incoming.id); setSpot(incoming.nodes[0].spot); setFilter('all');
+      setSavedQuick(undefined); setDatasetId(incoming.id); setSpot(incoming.nodes[0].spot); setFilter('all');
       setImportMessage(t(`Loaded ${incoming.nodes.length} spots. This file stays in this browser session.`, `已载入 ${incoming.nodes.length} 个场景，文件仅保留在当前浏览器会话中。`));
-    } catch (error) { setImportError(error instanceof Error ? error.message : 'Invalid dataset'); }
-    if (fileInput.current) fileInput.current.value = '';
+    } catch (error) { if (version === quickImportVersion.current) setImportError(error instanceof Error ? error.message : 'Invalid dataset'); }
+    if (version === quickImportVersion.current && fileInput.current) fileInput.current.value = '';
   }
 
   function switchDataset(id: string) {
+    quickImportVersion.current++;
     const selected = datasets.find(d => d.id === id);
     if (!selected) return;
-    setDatasetId(id); setSpot(selected.nodes[0].spot); setFilter('all');
+    setSavedQuick(undefined); setDatasetId(id); setSpot(selected.nodes[0].spot); setFilter('all');
   }
 
   return <div className="app-shell">
@@ -109,18 +155,22 @@ export default function App() {
 
     <main>
       <div className="page-heading"><div><div className="eyebrow">THE STUDY ROOM <span>/</span> PREFLOP</div><h1>{t('Preflop workspace', '翻前策略工作台')}<span className="version">v0.2</span></h1><p>{t('Set the spot. Explore the range. Understand the frequency.', '选择场景，查看范围，理解每一手牌的行动频率。')}</p></div><button className="secondary-button source-button" onClick={() => setModal('data')}><Database size={16} />{t('Manage data', '管理数据')}<ArrowUpRight size={15} /></button></div>
-      <div className="workspace-tabs" aria-label="Preflop workspace mode"><button className={workspaceMode === 'published' ? 'active' : ''} aria-pressed={workspaceMode === 'published'} onClick={() => setWorkspaceMode('published')}>{t('Reference ranges', '参考范围图')}</button><button className={workspaceMode === 'history' ? 'active' : ''} aria-pressed={workspaceMode === 'history'} onClick={() => setWorkspaceMode('history')}>{t('Action history', '完整行动历史')}</button><button className={workspaceMode === 'quick' ? 'active' : ''} aria-pressed={workspaceMode === 'quick'} onClick={() => setWorkspaceMode('quick')}>{t('Quick lookup', '快捷范围查询')}</button><button className={workspaceMode === 'inventory' ? 'active' : ''} aria-pressed={workspaceMode === 'inventory'} onClick={() => setWorkspaceMode('inventory')}>{t('Data coverage', '数据覆盖')}</button><button onClick={() => { setReferenceSelection(null); setModal('references'); }}>{t('Reference PDFs', '专业 PDF')}<ArrowUpRight size={14}/></button></div>
-      <div hidden={workspaceMode !== 'published'}><PublishedCharts key={rangeRequest?.version ?? 0} initialSelection={rangeRequest?.selection} t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
-      <div hidden={workspaceMode !== 'history'}><TreeWorkspace openRequest={treeRequest} t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
+      <div className="workspace-tabs" aria-label="Preflop workspace mode"><button className={workspaceMode === 'published' ? 'active' : ''} aria-pressed={workspaceMode === 'published'} onClick={() => setWorkspaceMode('published')}>{t('Reference ranges', '参考范围图')}</button><button className={workspaceMode === 'history' ? 'active' : ''} aria-pressed={workspaceMode === 'history'} onClick={() => setWorkspaceMode('history')}>{t('Action history', '完整行动历史')}</button><button className={workspaceMode === 'quick' ? 'active' : ''} aria-pressed={workspaceMode === 'quick'} onClick={() => setWorkspaceMode('quick')}>{t('Quick lookup', '快捷范围查询')}</button><button className={workspaceMode === 'inventory' ? 'active' : ''} aria-pressed={workspaceMode === 'inventory'} onClick={() => setWorkspaceMode('inventory')}>{t('Data coverage', '数据覆盖')}</button><button className={workspaceMode === 'study' ? 'active' : ''} aria-pressed={workspaceMode === 'study'} onClick={() => setWorkspaceMode('study')}>{t('Saved spots', '我的收藏')} · {studyCollection.bookmarks.length}</button><button onClick={() => { setReferenceSelection(null); setModal('references'); }}>{t('Reference PDFs', '专业 PDF')}<ArrowUpRight size={14}/></button></div>
+      {studyNotice && <p className="study-notice" role="status">{studyNotice}</p>}
+      {studyError && workspaceMode !== 'study' && <p className="study-notice" role="alert">{t('Bookmarks are available in memory only. Open Saved spots and export them to keep a copy.', '收藏目前仅在内存中可用，请打开“我的收藏”导出备份。')}</p>}
+      <div hidden={workspaceMode !== 'published'}><PublishedCharts key={rangeRequest?.version ?? 0} initialSelection={rangeRequest?.selection} initialStudy={rangeRequest?.study} onSave={saveStudy} t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
+      <div hidden={workspaceMode !== 'history'}><TreeWorkspace openRequest={treeRequest} onSave={saveStudy} t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
       {workspaceMode === 'inventory' && <DataInventory t={t} onReference={selection => { setRangeRequest(current => ({ selection, version: (current?.version ?? 0) + 1 })); setWorkspaceMode('published'); }} onTree={id => { setTreeRequest(current => ({ id, version: (current?.version ?? 0) + 1 })); setWorkspaceMode('history'); }}/>}
+      {workspaceMode === 'study' && <StudyLibrary t={t} collection={studyCollection} onChange={updateStudy} onOpen={openStudy} storageError={studyError ?? undefined}/>}
       <div hidden={workspaceMode !== 'quick'}>
+      <div className="study-toolbar"><button className="secondary-button" disabled={!normalizeHand(query)} onClick={() => saveStudy({view: 'quick', spot, hand: normalizeHand(query)!, binding: unboundQuick ? savedQuick?.binding ?? null : bindStudyDataset(dataset)}, `${spot.players}-max · ${spotTitle(spot)} · ${normalizeHand(query)}`)}>{t('Save this spot', '收藏当前场景')}</button>{unboundQuick && <p role="status">{t('Saved query restored. Its source is missing or has changed; select a dataset explicitly to see new frequencies.', '已恢复收藏条件，原来源未载入或已更新；请主动选择来源，才能查看新的频率。')}<button className="text-button" onClick={() => setModal('data')}>{t('Choose a source', '选择来源')}</button></p>}</div>
       <ComputationNotice source={dataset.source} t={t}/>
-      <div className={`data-notice ${isDemo ? 'demo-notice' : 'import-notice'}`}><Info size={17} /><span><strong>{isDemo ? t('Interactive demo', '交互演示') : dataset.source.kind === 'computed' ? t('Computed approximation', '本机近似计算') : t('Imported dataset', '已导入数据')}</strong><span className="notice-divider">·</span>{isDemo ? t('Synthetic frequencies for exploring the interface. Not a solved GTO strategy.', '当前频率仅用于界面演示，并非求解器计算的 GTO 策略。') : t('Source and accuracy are declared by the file owner, not independently verified.', '来源与准确性由文件提供者声明，尚未经独立验证。')}</span><button onClick={() => setModal('data')}>{t('View source', '查看来源')}<ChevronRight size={14} /></button></div>
+      <div className={`data-notice ${isDemo ? 'demo-notice' : 'import-notice'}`}><Info size={17} /><span><strong>{unboundQuick ? t('Source unavailable', '原来源不可用') : isDemo ? t('Interactive demo', '交互演示') : dataset.source.kind === 'computed' ? t('Computed approximation', '本机近似计算') : t('Imported dataset', '已导入数据')}</strong><span className="notice-divider">·</span>{unboundQuick ? t('Query conditions have been restored. Restore the original data or choose a source to see matching frequencies.', '查询条件已恢复。请恢复原始数据或选择来源，以查看匹配频率。') : isDemo ? t('Synthetic frequencies for exploring the interface. Not a solved GTO strategy.', '当前频率仅用于界面演示，并非求解器计算的 GTO 策略。') : t('Source and accuracy are declared by the file owner, not independently verified.', '来源与准确性由文件提供者声明，尚未经独立验证。')}</span><button onClick={() => setModal('data')}>{t('View source', '查看来源')}<ChevronRight size={14} /></button></div>
 
       <ReferenceSummary onOpen={() => { setReferenceSelection(null); setModal('references'); }} t={t}/>
       <div className="workspace">
         <section className="setup-panel panel" aria-labelledby="setup-title">
-          <div className="panel-heading"><h2 id="setup-title"><span className="step-number">01</span>{t('Set your spot', '设置场景')}</h2><button className="icon-button" aria-label="Reset spot" onClick={() => { setSpot(INITIAL_SPOT); setDatasetId(DEMO_DATASET.id); setFilter('all'); }}><RotateCcw size={15} /></button></div>
+          <div className="panel-heading"><h2 id="setup-title"><span className="step-number">01</span>{t('Set your spot', '设置场景')}</h2><button className="icon-button" aria-label="Reset spot" onClick={() => { quickImportVersion.current++; setSavedQuick(undefined); setSpot(INITIAL_SPOT); setDatasetId(DEMO_DATASET.id); setFilter('all'); }}><RotateCcw size={15} /></button></div>
           <div className="setup-fields">
             <div className="two-fields"><label>{t('Game type', '游戏类型')}<select value={spot.format} onChange={e => changeSpot({ format: e.target.value as Spot['format'] })}><option value="cash">Cash game</option><option value="mtt">MTT · Chip EV</option></select></label><label>{t('Players', '人数')}<select value={spot.players} onChange={e => changeSpot({ players: Number(e.target.value) })}>{[2,3,4,5,6,7,8,9].map(n => <option key={n} value={n}>{n === 2 ? 'Heads-up' : `${n}-max`}</option>)}</select></label></div>
             <label className="stack-label">{t('Effective stack', '有效后手')}<div className="number-unit"><input type="number" min="1" max="1000" step="1" value={spot.stackBb} onChange={e => changeSpot({ stackBb: Number(e.target.value) })} aria-label="Effective stack"/><span>BB</span></div></label>
@@ -141,7 +191,7 @@ export default function App() {
           </div>
         </section>
 
-        {dataset.source.kind === 'computed' && !node ? <QuickTreeLookup dataset={dataset} spot={spot} query={query} onQueryChange={value => { setQuery(value); const normalized = normalizeHand(value); if (normalized) setHand(normalized); }} enabled={workspaceMode === 'quick'} t={t}/> : <>
+        {dataset.source.kind === 'computed' && !node ? <QuickTreeLookup dataset={dataset} spot={spot} query={query} onQueryChange={editHand} enabled={workspaceMode === 'quick'} t={t}/> : <>
         <section className="range-panel panel" aria-labelledby="range-title">
           <div className="panel-heading"><h2 id="range-title"><span className="step-number">02</span>{t('Range explorer', '范围矩阵')}</h2><span className="matrix-count">13 × 13</span></div>
           <div className="range-context"><div><h3>{spotTitle(spot)}</h3><span>{spot.players}-max <b>·</b> {spot.stackBb} BB <b>·</b> {spot.format === 'cash' ? 'Cash' : 'MTT'} <b>·</b> {t('Preflop', '翻前')}</span></div><span className={`status-pill ${node ? '' : 'unavailable'}`}><span/>{node ? datasetLabel : 'NO DATA'}</span></div>
@@ -152,12 +202,12 @@ export default function App() {
             return <button key={cell} className={`hand-cell ${hand === cell ? 'selected-hand' : ''} ${cell.length === 2 ? 'pair' : ''} ${!f ? 'no-frequency' : ''}`} style={{background} as CSSProperties} onClick={() => selectHand(cell)} aria-label={`${cell}${f ? `: ${raiseLabel} ${percent(f.raise)}, ${callLabel} ${percent(f.call)}, Fold ${percent(f.fold)}` : ': no data'}`} aria-pressed={hand === cell}>{cell}</button>;
           })}</div>{!node && <div className="empty-overlay"><Database size={28}/><strong>{t('No data for this spot', '该场景暂无数据')}</strong><p>{t('Choose a covered spot or import a matching strategy.', '请选择已覆盖场景，或导入匹配条件的策略。')}</p><button className="primary-button" onClick={() => setModal('data')}>{t('Explore available data', '查看可用数据')}<ArrowUpRight size={15}/></button></div>}</div>
           <div className="matrix-footnote"><span>{t('Suited above the diagonal · Offsuit below', '对角线上方为同花 · 下方为非同花')}</span><span>169 {t('hands', '种手牌')}</span></div>
-          <div className="range-summary"><div className="summary-title">{t('Range breakdown', '范围占比')}<span>{t('All starting-hand combinations', '按全部起手牌组合加权')}</span></div><div className="summary-bar">{(['raise','call','fold'] as const).map(a => <span key={a} style={{background:COLORS[a],width:`${(summary?.[a] ?? (a === 'fold' ? 1 : 0))*100}%`}}/>)}</div><div className="summary-values">{visibleActions.map(a => <div key={a}><span className="legend-dot" style={{background:COLORS[a]}}/><span>{a === 'raise' ? raiseLabel : a === 'call' ? callLabel : 'Fold'}</span><strong>{summary ? percent(summary[a]) : '—'}</strong></div>)}</div></div>
+          <div className="range-summary"><div className="summary-title">{t('Range breakdown', '范围占比')}<span>{t('All starting-hand combinations', '按全部起手牌组合加权')}</span></div><div className="summary-bar">{(['raise','call','fold'] as const).map(a => <span key={a} style={{background:COLORS[a],width:`${(summary?.[a] ?? 0)*100}%`}}/>)}</div><div className="summary-values">{visibleActions.map(a => <div key={a}><span className="legend-dot" style={{background:COLORS[a]}}/><span>{a === 'raise' ? raiseLabel : a === 'call' ? callLabel : 'Fold'}</span><strong>{summary ? percent(summary[a]) : '—'}</strong></div>)}</div></div>
           <div className="data-credit"><Database size={13}/><span>{dataset.name}</span><button onClick={() => setModal('data')} aria-label="View dataset details"><ArrowUpRight size={14}/></button></div>
         </section>
 
         <aside className="hand-panel panel" aria-labelledby="hand-title"><div className="panel-heading"><h2 id="hand-title"><span className="step-number">03</span>{t('Your hand', '查看手牌')}</h2><Layers3 size={17}/></div>
-          <div className="hand-search"><label htmlFor="hand-input">{t('Find a starting hand', '输入起手牌')}</label><div className="search-input"><input id="hand-input" value={query} placeholder="e.g. AKs, QQ, As Kh" spellCheck={false} onChange={e => { setQuery(e.target.value); const normalized = normalizeHand(e.target.value); if (normalized) setHand(normalized); }}/><span>↵</span></div>{query && !normalizeHand(query) && <p className="input-error">{t('Use AKs, AKo, QQ, or two cards like As Kh.', '格式：AKs、AKo、QQ，或 As Kh 等两张具体牌。')}</p>}</div>
+          <div className="hand-search"><label htmlFor="hand-input">{t('Find a starting hand', '输入起手牌')}</label><div className="search-input"><input id="hand-input" value={query} placeholder="e.g. AKs, QQ, As Kh" spellCheck={false} onChange={e => editHand(e.target.value)}/><span>↵</span></div>{query && !normalizeHand(query) && <p className="input-error">{t('Use AKs, AKo, QQ, or two cards like As Kh.', '格式：AKs、AKo、QQ，或 As Kh 等两张具体牌。')}</p>}</div>
           <div className="selected-hand-display"><div className="playing-cards"><div className="playing-card"><span>{hand[0]}</span><i>♠</i><b>♠</b></div><div className={`playing-card second ${hand[2] === 's' ? '' : 'red-suit'}`}><span>{hand[1]}</span><i>{hand[2] === 's' ? '♠' : '♥'}</i><b>{hand[2] === 's' ? '♠' : '♥'}</b></div></div><h3>{hand}<span>{hand.length === 2 ? t('Pocket pair', '口袋对子') : hand[2] === 's' ? t('Suited', '同花') : t('Offsuit', '非同花')}</span></h3><p>{comboCount(hand)} {t('combinations', '种组合')}<span>·</span>{spot.hero}</p></div>
           <div className="frequency-section"><div className="frequency-title">{t('Action frequencies', '行动频率')}<span>{datasetLabel}</span></div>{visibleActions.map(action => <div key={action} className={`frequency-row ${action}`}><div><span className="action-marker" style={{background:COLORS[action]}}/><span>{action === 'raise' ? raiseLabel : action === 'call' ? callLabel : 'Fold'}</span><strong>{frequencies ? percent(frequencies[action]) : '—'}</strong></div><div className="frequency-track"><span style={{width:`${(frequencies?.[action] ?? 0)*100}%`,background: action === 'fold' ? '#b5bfb0' : COLORS[action]}}/></div></div>)}<p className="frequency-note">{node ? t('Frequencies apply only to the exact spot selected.', '频率仅适用于当前完整场景。') : t('No recommendation without matching data.', '没有匹配数据时，不给出行动建议。')}</p></div>
           <div className="spot-recap"><h4>{t('At a glance', '当前场景')}</h4><dl><div><dt>{t('Position', '位置')}</dt><dd>{spot.hero}{spot.villain ? ` vs ${spot.villain}` : ''}</dd></div><div><dt>{t('Stack', '后手')}</dt><dd>{spot.stackBb} BB</dd></div><div><dt>Open size</dt><dd>{spot.openSizeBb} BB</dd></div><div><dt>Rake</dt><dd>{spot.rake || '—'}</dd></div></dl></div>
@@ -177,7 +227,7 @@ export default function App() {
         <div className="library-shortcuts"><button className="secondary-button" onClick={() => { setWorkspaceMode('published'); setModal(null); }}>{t('Published range library', '出版范围图表库')}<ArrowUpRight size={14}/></button><button className="secondary-button" onClick={() => { setWorkspaceMode('history'); setModal(null); }}>{t('Action-history data · v2', '完整历史数据 · v2')}<ArrowUpRight size={14}/></button></div><p className="tree-muted">{t('The dataset selector and import form below are for Quick lookup (v1). Full-history files are imported within Action history.', '下方数据选择和导入属于 Quick lookup（v1）。完整历史文件请在 Action history 中导入。')}</p>
         <CoveragePanel datasets={datasets} spot={spot} t={t}/>
         {import.meta.env.DEV && <div className="local-data-status"><p>{t(`${localDatasetCount} local datasets loaded from data/private. JSON files saved there are loaded again after refresh.`, `已从 data/private 载入 ${localDatasetCount} 个本地数据集。放入该目录的 JSON 文件会在刷新后重新载入。`)}</p>{localErrors.map((error, index) => <p className="import-error" role="alert" key={index}>{error}</p>)}</div>}
-        <label>{t('Active dataset', '当前数据集')}<select value={datasetId} onChange={e => switchDataset(e.target.value)}>{datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
+        <label>{t('Active dataset', '当前数据集')}<select value={unboundQuick ? '' : datasetId} onChange={e => switchDataset(e.target.value)}>{unboundQuick && <option value="" disabled>{t('Saved source unavailable · choose explicitly', '收藏来源不可用，请重新选择')}</option>}{datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
         <div className="source-details"><div><span>{t('Provider', '提供者')}</span><strong>{dataset.source.name}</strong></div><div><span>{t('Data status', '数据状态')}</span><strong>{isDemo ? t('Synthetic demo · not GTO', '合成演示 · 非 GTO') : dataset.source.kind === 'computed' ? dataset.source.computation?.status === 'unconverged' ? t('Computed approximation · not converged', '本机近似计算 · 未确认收敛') : t('Computed approximation · restricted model', '本机近似计算 · 受限模型') : t('User import · unverified', '用户导入 · 未独立验证')}</strong></div><div><span>{t('License / usage', '许可 / 用途')}</span><strong>{dataset.source.license}</strong></div><div><span>{t('Retrieved', '获取日期')}</span><strong>{dataset.source.retrievedAt}</strong></div>{/^https?:\/\//.test(dataset.source.url) && <a href={dataset.source.url} target="_blank" rel="noreferrer">{t('Original source', '原始来源')}<ArrowUpRight size={14}/></a>}</div>
         <label>{t('Covered spots', '已覆盖场景')}<select aria-label="Covered spots" value={node?.id ?? ''} onChange={e => { const next = dataset.nodes.find(n => n.id === e.target.value); if (next) {setSpot(next.spot); setFilter('all');} }}>{!node && <option value="">{t('Choose a covered spot', '选择已覆盖的场景')}</option>}{dataset.nodes.map(n => <option key={n.id} value={n.id}>{spotTitle(n.spot)} / {n.spot.players}-max / {n.spot.stackBb} BB / {n.spot.openSizeBb}-{n.spot.threeBetSizeBb}-{n.spot.fourBetSizeBb} BB / {n.spot.format} / ante {n.spot.anteBb} / {n.spot.rake}</option>)}</select></label>
         <div className="import-area"><Upload size={24}/><h3>{t('Bring your own ranges', '导入你的范围数据')}</h3><p>{t('Import the GTO Reminder JSON format. Files stay on your device and are cleared when you refresh.', '导入 GTO Reminder 格式的 JSON。文件仅在本机读取，刷新后清空。')}</p><div><button className="primary-button" onClick={() => fileInput.current?.click()}><Plus size={15}/>{t('Import JSON', '导入 JSON')}</button><button className="text-button" onClick={() => download({...DEMO_DATASET,id:'my-strategy-template'},'gto-reminder-demo-template.json')}><ArrowDownToLine size={15}/>{t('Download template', '下载模板')}</button></div><input type="file" accept=".json,application/json" ref={fileInput} onChange={e => void importDataset(e.target.files?.[0])} hidden />{importError && <p className="import-error" role="alert">{importError}</p>}{importMessage && <p className="import-success" role="status"><Check size={15}/>{importMessage}</p>}</div>

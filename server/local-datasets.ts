@@ -4,6 +4,7 @@ import type { Plugin } from 'vite';
 import { getPositions, validateDataset, type Dataset, type Position } from '../src/lib/poker';
 import { gameKey, historyKey, validateTreeDataset, type TreeDataset } from '../src/lib/tree-strategy';
 import type { PreflopAction } from '../src/lib/preflop';
+import { beginPrivateDataRead, stopForPrivateDataRestore } from './private-data-lock';
 
 export interface TreeLibraryEntry {
   id: string; name: string; game: TreeDataset['game']; source: TreeDataset['source']; nodeCount: number;
@@ -131,6 +132,8 @@ export function localDatasets(): Plugin {
         // Concurrent refreshes share the completed index instead of parsing all
         // large files at once. Responses still perform a fresh directory scan.
         const operation = queue.then(async () => {
+          const version = await beginPrivateDataRead(server.config.root, request.method, response);
+          if (!version) return;
           const query = new URL(request.url ?? '/', 'http://localhost').searchParams;
           const selectedId = query.get('treeId');
           const summary = selectedId === null && query.get('summary') === '1';
@@ -208,6 +211,7 @@ export function localDatasets(): Plugin {
                 }
               }
             }
+            if (await stopForPrivateDataRestore(server.config.root, request.method, response, version)) return;
             response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
             response.end(JSON.stringify({ datasets, treeDatasets, errors, ...(summary ? { treeLibrary } : {}), ...(matchedPartId ? { matchedPartId } : {}) }));
           } catch {
