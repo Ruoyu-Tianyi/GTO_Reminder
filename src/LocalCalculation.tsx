@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { HANDS, normalizeHand } from './lib/poker';
 import { startLocalEquityCalculation } from './lib/local-equity-client';
 import type { LocalEquityProgress, LocalEquityRequest } from './lib/local-equity';
+import { MISSING_HAND_BACKGROUND } from './lib/strategy-colors';
 
 type Translate = (en: string, zh: string) => string;
 export default function LocalCalculation({ t, context, opponents, hand = 'AKs' }: {
@@ -61,7 +62,7 @@ export default function LocalCalculation({ t, context, opponents, hand = 'AKs' }
       {result && <div className="calculation-result"><strong>{result.hand} · {(result.equity * 100).toFixed(1)}%</strong><span>{t('95% sampling interval', '95% 采样区间')}: {(result.confidence95[0] * 100).toFixed(1)}–{(result.confidence95[1] * 100).toFixed(1)}% · n={result.samples.toLocaleString()}</span></div>}
       {progress && progress.totalHands > 1 && <div className="hand-matrix equity-matrix" aria-label="Local equity matrix">{HANDS.map(cell => {
         const row = progress.results.find(item => item.hand === cell);
-        return <button key={cell} className={`hand-cell ${normalized === cell ? 'selected-hand' : ''}`} style={{ background: row ? `hsl(100 32% ${96-row.equity*48}%)` : '#f0f2ed' }} onClick={() => setSelectedHand(cell)} aria-label={`${cell}: ${row ? `${(row.equity*100).toFixed(1)}% equity` : 'pending'}`}>{cell}</button>;
+        return <button key={cell} className={`hand-cell ${normalized === cell ? 'selected-hand' : ''}`} style={{ background: row ? `hsl(162 44% ${18 + row.equity * 14}%)` : MISSING_HAND_BACKGROUND }} onClick={() => setSelectedHand(cell)} aria-pressed={normalized === cell} aria-label={`${cell}: ${row ? `${(row.equity*100).toFixed(1)}% equity` : 'pending'}`}>{cell}</button>;
       })}</div>}
       <p className="tree-muted">{t('No future betting, folds, rake, equity realization, side-pot EV, or information from folded players. More samples reduce sampling error, not model error. Fixed seed: 20261002.', '未建模未来下注、弃牌、抽水、胜率兑现、边池 EV 或已弃牌玩家的信息。增加样本只降低采样误差，不能降低模型误差。固定种子：20261002。')}</p>
       {error && <p className="input-error" role="alert">{error}</p>}

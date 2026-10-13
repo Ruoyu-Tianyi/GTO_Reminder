@@ -3,13 +3,13 @@ import { ArrowUpRight, BookOpen, Info } from 'lucide-react';
 import { HANDS, comboCount, getPositions, normalizeHand, type Position } from './lib/poker';
 import type { PublishedChartsResponse } from './lib/published-charts';
 import { referenceVillains, type ReferenceKind, type ReferenceRange, type ReferenceRangesResponse } from './lib/reference-ranges';
-import { displayPublishedChart, REFERENCE_KIND_LABELS, referenceActionColor } from './lib/display-ranges';
+import { displayPublishedChart, REFERENCE_KIND_LABELS } from './lib/display-ranges';
 import LocalCalculation from './LocalCalculation';
 import type { StudyQuery } from './lib/study-session';
 import { bindStudyReference, matchesStudyReference } from './lib/study-bindings';
+import { MISSING_HAND_BACKGROUND, strategyActionColor } from './lib/strategy-colors';
 
 type Translate = (en: string, zh: string) => string;
-const HATCH = 'repeating-linear-gradient(135deg,#f6f7f4 0px,#f6f7f4 5px,#d7ded0 5px,#d7ded0 6px)';
 
 export type ReferenceSelection = Pick<ReferenceRange, 'players' | 'kind' | 'hero' | 'villain'>;
 
@@ -33,6 +33,7 @@ export default function PublishedCharts({ t, onReference, initialSelection, init
   const hand = normalizeHand(query);
   const row = hand ? node?.hands[hand] : undefined;
   const actions = node?.actions ?? [];
+  const referenceActionColor = (action: (typeof actions)[number], index: number) => strategyActionColor(action, actions.slice(0, index).filter(choice => choice.type === 'raise').length);
   const measured = node?.provenance === 'image-transcription';
   const estimated = node?.provenance === 'seat-projection';
   const available = node ? Object.values(node.hands).filter(row => row.status === 'available').length : 0;
@@ -67,11 +68,11 @@ export default function PublishedCharts({ t, onReference, initialSelection, init
   }, []);
 
   return <div className="published-workspace">
-    <div className="study-toolbar"><button className="secondary-button" disabled={!hand || loading} onClick={() => hand && onSave({ view: 'reference', selection: {players, kind, hero, villain}, hand, binding: node ? bindStudyReference(node) : expectedSource ?? null }, `${players}-max · ${title} · ${hand}`)}>{t('Save this spot', '收藏当前场景')}</button>{sourceMismatch && !loading && <p role="status">{t('Saved query restored. Its source is missing or has changed; no replacement frequencies are shown.', '已恢复收藏条件，原来源未载入或已更新，当前不展示替代频率。')}{candidate && <button className="text-button" onClick={() => setExpectedSource(undefined)}>{t('Use the current source', '改用当前来源')}</button>}</p>}</div>
-    <div className={`tree-intro ${players === 7 ? 'estimate-intro' : ''}`}><BookOpen size={21}/><div>
+    {sourceMismatch && !loading && <div className="study-toolbar"><p role="status">{t('Saved query restored. Its source is missing or has changed; no replacement frequencies are shown.', '已恢复收藏条件，原来源未载入或已更新，当前不展示替代频率。')}{candidate && <button className="text-button" onClick={() => setExpectedSource(undefined)}>{t('Use the current source', '改用当前来源')}</button>}</p></div>}
+    <div className={`tree-intro published-intro ${players === 7 ? 'estimate-intro' : ''}`}><BookOpen size={21}/><div>
       <strong>{t('Reference ranges · Cash 100 BB', '翻前参考范围 · Cash 100 BB')}</strong>
-      <p>{t('6/9-max: published 50% steps. 8-max: measured chart bars. 7-max: explicitly estimated from 8-max seat order. Source precision and missing hands stay visible.', '6／9 人保留出版的 50% 粒度；8 人从原图色条测量；7 人由 8 人座位顺序投影估算。逐图标明精度与缺失手牌。')}</p>
-    </div></div>
+      <p>{t('6/9-max · published charts. 8-max · image measured. 7-max · seat projection.', '6／9 人出版参考 · 8 人原图测量 · 7 人座位投影估算')}</p>
+    </div><button className="secondary-button" disabled={!hand || loading} onClick={() => hand && onSave({ view: 'reference', selection: {players, kind, hero, villain}, hand, binding: node ? bindStudyReference(node) : expectedSource ?? null }, `${players}-max · ${title} · ${hand}`)}>{t('Save this spot', '收藏当前场景')}</button></div>
     <div className="tree-layout published-layout">
       <section className="panel">
         <div className="panel-heading"><h2>{t('Choose a reference', '选择参考范围')}</h2><BookOpen size={17}/></div>
@@ -87,11 +88,13 @@ export default function PublishedCharts({ t, onReference, initialSelection, init
           <div className="published-conditions" aria-live="polite"><span>Cash · 100 BB · {REFERENCE_KIND_LABELS[kind]}</span>
             <strong>{sourceLabel}</strong>
             {estimated && <p>{t('Seat projection, not a solved 7-max strategy. Removes 8-max UTG and maps UTG+1 to UTG; ignores the removed seat’s card information and strategic effect.', '座位投影估算，未重新求解 7 人策略：移除 8 人 UTG，UTG+1 改为 UTG；忽略移除座位的牌张信息和策略影响。')}</p>}
-            <p>{t('Single-opponent lines only. No cold callers or squeeze. Match source bet sizes before using a reference.', '仅对应单一对手行动线，不含冷跟或 Squeeze；须核对原图下注尺寸。')}</p>
           </div>
+        </div>
+        <details className="published-source-details"><summary>{t('Source, precision & coverage', '来源、精度与覆盖')}</summary><div className="published-source-body">
+          <p className="tree-muted">{t('6/9-max: published 50% steps. 8-max: measured chart bars. 7-max: explicitly estimated from 8-max seat order. Source precision and missing hands stay visible.', '6／9 人保留出版的 50% 粒度；8 人从原图色条测量；7 人由 8 人座位顺序投影估算。逐图标明精度与缺失手牌。')}</p>
+          <p className="tree-muted">{t('Single-opponent lines only. No cold callers or squeeze. Match source bet sizes before using a reference.', '仅对应单一对手行动线，不含冷跟或 Squeeze；须核对原图下注尺寸。')}</p>
           <div className="published-availability" aria-label="Published numerical chart counts">{[6,7,8,9].map(count => <span key={count}><b>{count}-max</b><em>{nodes.filter(item => item.players === count && item.kind === kind).length} {count === 7 ? t('estimates', '张估算') : t('charts', '张图')}</em></span>)}</div>
           <p className="tree-muted">{t('Counts are charts, not fully solved nodes. Hatched hands remain unknown, even inside a loaded chart.', '数量是图表数，不是完整求解节点数；即使图表已载入，斜纹手牌仍表示未知。')}</p>
-        </div>
         <div className="tree-library"><h3>{t('Source & method', '来源与方法')}</h3>{node && <>
           <p className="tree-muted">{node.source.title} · {node.sourcePlayers}-max · PDF {node.page}</p>
           <button className="text-button" onClick={() => onReference(node.refId, node.page)}>{t('Compare original PDF', '对照原始 PDF')}<ArrowUpRight size={14}/></button>
@@ -99,12 +102,13 @@ export default function PublishedCharts({ t, onReference, initialSelection, init
           <p className="tree-muted">{node.precision}</p>
           <details className="tree-assumptions"><summary>{t('Chart notes', '图表说明')}</summary>{node.notes.map((note,index) => <p key={index}>{note}</p>)}</details>
         </>}<p className="tree-muted">{t('These references do not populate exact-history solver datasets. Rake, ante and historical reach may be unknown.', '参考图不写入完整历史的精确策略库；抽水、前注与历史到达权重可能未知。')}</p></div>
+        </div></details>
       </section>
       <section className="panel tree-range">
         <div className="panel-heading"><h2>{title}</h2><span className={`status-pill ${estimated ? 'estimate-badge' : ''}`}>{sourceLabel}</span></div>
         <div className="published-matrix-legend">{actions.map((action,index) => <span key={action.id}><i style={{ background: referenceActionColor(action,index) }}/>{action.label}</span>)}</div>
         <div className="matrix-wrapper"><div className="hand-matrix" aria-label={`Published simplified range: ${title}`}>{HANDS.map(cell => {
-          const item = node?.hands[cell]; let background = HATCH;
+          const item = node?.hands[cell]; let background = MISSING_HAND_BACKGROUND;
           if (item?.status === 'available') { let offset = 0; background = `linear-gradient(90deg,${actions.map((action,index) => { const start = offset; offset += item.frequencies[action.id] * 100; return `${referenceActionColor(action,index)} ${start}% ${offset}%`; }).join(',')})`; }
           return <button key={cell} className={`hand-cell ${hand === cell ? 'selected-hand' : ''}`} style={{ background }} onClick={() => setQuery(cell)} aria-pressed={hand === cell} aria-label={`${cell}: ${item?.status === 'available' ? actions.map(action => `${action.label} ${(item.frequencies[action.id] * 100).toFixed(1)}%`).join(', ') : item?.status ?? 'missing'}`}>{cell}</button>;
         })}</div></div>
@@ -117,7 +121,7 @@ export default function PublishedCharts({ t, onReference, initialSelection, init
         <label>{t('Your hand', '你的手牌')}<input aria-label="Published chart hand" value={query} onChange={event => setQuery(event.target.value)} placeholder="AKs, AKo, QQ"/></label>
         <strong className="tree-hand-title">{hand ?? '—'}</strong>
         {!hand && <p className="input-error">{t('Specify suited or offsuit, or enter two different cards.', '请注明同花／非同花，或输入两张不重复的牌。')}</p>}
-        <div className="tree-hand-frequencies">{actions.map((action,index) => <div key={action.id}><span style={{ borderLeftColor: referenceActionColor(action,index) }}>{action.label}</span><strong>{row?.status === 'available' ? `${(row.frequencies[action.id] * 100).toFixed(measured || estimated ? 0 : 1)}%` : '—'}</strong></div>)}</div>
+        <div className="tree-hand-frequencies">{actions.map((action,index) => <div key={action.id}><span style={{ borderLeftColor: referenceActionColor(action,index) }}>{action.label}</span><strong>{row?.status === 'available' ? `${(row.frequencies[action.id] * 100).toFixed(measured || estimated ? 0 : 1)}%` : '—'}</strong><i className="tree-hand-track" aria-hidden="true"><b style={{ width: row?.status === 'available' ? String(row.frequencies[action.id] * 100) + '%' : '0%', background: referenceActionColor(action,index) }}/></i></div>)}</div>
         <p className="tree-muted">{estimated ? t('Approximation from a different table size; not a 7-max solve.', '从其他人数投影的近似值，并非 7 人求解结果。') : measured ? t('Measured from source image bars; image resolution limits precision.', '由原图色条宽度测量，精度受图片分辨率限制。') : t('Publisher-simplified frequencies.', '出版者简化后的频率。')}</p>
       </div></aside>
     </div>
