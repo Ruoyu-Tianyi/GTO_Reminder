@@ -1,3 +1,4 @@
+import { strategyFetch } from './lib/strategy-data-client';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowUpRight, BookOpen, Bookmark, Check, ChevronRight, CircleHelp, Database, GitBranch, Grid2X2, Info, Layers3, Plus, RotateCcw, Search, Settings2, Spade, Upload, X } from 'lucide-react';
 import { ACTION_COLORS } from './lib/strategy-colors';
@@ -40,7 +41,7 @@ function normalizeSpot(spot: Spot): Spot {
 }
 
 export default function App() {
-  const [workspaceMode, setWorkspaceMode] = useState<'history' | 'quick' | 'published' | 'inventory' | 'study'>(import.meta.env.DEV ? 'published' : 'quick');
+  const [workspaceMode, setWorkspaceMode] = useState<'history' | 'quick' | 'published' | 'inventory' | 'study'>('published');
   const [rangeRequest, setRangeRequest] = useState<{ selection: ReferenceSelection; version: number; study?: Extract<StudyQuery, {view: 'reference'}> }>();
   const [treeRequest, setTreeRequest] = useState<TreeOpenRequest>();
   const [savedQuick, setSavedQuick] = useState<Extract<StudyQuery, {view: 'quick'}>>();
@@ -112,15 +113,15 @@ export default function App() {
   useEffect(() => () => { quickImportVersion.current++; }, []);
   useEffect(() => { if (modal && !dialogRef.current?.open) dialogRef.current?.showModal(); if (!modal && dialogRef.current?.open) dialogRef.current.close(); }, [modal]);
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
     const controller = new AbortController();
-    fetch('/api/local-datasets?summary=1', { signal: controller.signal }).then(async response => {
-      if (!response.ok) throw new Error('The local strategy folder could not be loaded.');
+    strategyFetch('/api/local-datasets?summary=1', { signal: controller.signal }).then(async response => {
+      if (!response.ok) throw new Error('The strategy library could not be loaded.');
       const result = await response.json() as { datasets: unknown[]; errors: string[] };
+      if (controller.signal.aborted) return;
       const incoming = result.datasets.map(validateDataset).filter(data => data.id !== DEMO_DATASET.id);
       setDatasets(current => [...current, ...incoming.filter(data => !current.some(existing => existing.id === data.id))]);
       setLocalDatasetCount(incoming.length); setLocalErrors(result.errors);
-    }).catch(error => { if (!controller.signal.aborted) setLocalErrors([error instanceof Error ? error.message : 'Local data unavailable']); });
+    }).catch(error => { if (!controller.signal.aborted) setLocalErrors([error instanceof Error ? error.message : 'Strategy library unavailable']); });
     return () => controller.abort();
   }, []);
 
@@ -152,13 +153,13 @@ export default function App() {
     <header className="topbar">
       <a className="brand" href="#" onClick={e => e.preventDefault()} aria-label={t('Ruoyu Strategy Lab home', '若瑜策略研究首页')}><span className="brand-symbol"><Spade size={22} fill="currentColor" /></span><span className="brand-wordmark">{t('Ruoyu', '若瑜')}<span className="brand-light">{t(' Strategy', '策略研究')}</span><small>POKER STRATEGY SYSTEM</small></span></a>
       <nav className="top-nav" aria-label="Main navigation"><span className="nav-active"><Grid2X2 size={16} />Preflop</span><button ref={libraryButton} onClick={() => setModal('data')}><Database size={16} />{t('Data library', '数据来源')}</button></nav>
-      <div className="top-actions"><span className="local-mode"><span />{import.meta.env.DEV ? t('LOCAL WORKSPACE', '本地研究工作台') : t('BROWSER WORKSPACE', '浏览器研究工作台')}</span><button className="language" onClick={() => setLanguage(l => l === 'en' ? 'zh' : 'en')} aria-label="Switch language">{language === 'en' ? 'EN / 中文' : '中文 / EN'}</button><span className="top-divider" /><button className="icon-button help" onClick={() => setModal('guide')} aria-label="Open guide"><CircleHelp size={19} /></button></div>
+      <div className="top-actions"><span className="local-mode"><span />{import.meta.env.DEV ? t('LOCAL WORKSPACE', '本地研究工作台') : t('STRATEGY LIBRARY', '在线策略研究库')}</span><button className="language" onClick={() => setLanguage(l => l === 'en' ? 'zh' : 'en')} aria-label="Switch language">{language === 'en' ? 'EN / 中文' : '中文 / EN'}</button><span className="top-divider" /><button className="icon-button help" onClick={() => setModal('guide')} aria-label="Open guide"><CircleHelp size={19} /></button></div>
     </header>
 
     <main>
       <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" />STRATEGY LAB <span>/</span> PREFLOP</div><h1>{t('Ruoyu Strategy Lab', '若瑜策略研究')}</h1><p>{t('Read the range. Reconstruct the action. Refine every decision.', '读懂范围，拆解行动，让每一次决策都有依据。')}</p></div><div className="workspace-scope"><div className="scope-values"><span><b>6–9</b> MAX</span><span><b>100</b> BB</span><span>CASH</span></div><button className="secondary-button source-button" onClick={() => setModal('data')}><Database size={15} />{t('Manage data', '管理数据')}<ArrowUpRight size={14} /></button></div></div>
       <div className="workspace-tabs" aria-label="Preflop workspace mode"><button className={workspaceMode === 'published' ? 'active' : ''} aria-pressed={workspaceMode === 'published'} onClick={() => setWorkspaceMode('published')}><Grid2X2 size={16}/>{t('Reference ranges', '参考范围图')}</button><button className={workspaceMode === 'history' ? 'active' : ''} aria-pressed={workspaceMode === 'history'} onClick={() => setWorkspaceMode('history')}><GitBranch size={16}/>{t('Action history', '完整行动历史')}</button><button className={workspaceMode === 'quick' ? 'active' : ''} aria-pressed={workspaceMode === 'quick'} onClick={() => setWorkspaceMode('quick')}><Search size={16}/>{t('Quick lookup', '快捷范围查询')}</button><button className={workspaceMode === 'inventory' ? 'active' : ''} aria-pressed={workspaceMode === 'inventory'} onClick={() => setWorkspaceMode('inventory')}><Database size={16}/>{t('Data coverage', '数据覆盖')}</button><button className={workspaceMode === 'study' ? 'active' : ''} aria-pressed={workspaceMode === 'study'} onClick={() => setWorkspaceMode('study')}><Bookmark size={16}/>{t('Saved spots', '我的收藏')}<span className="tab-count">{studyCollection.bookmarks.length}</span></button><button className="pdf-tab" onClick={() => { setReferenceSelection(null); setModal('references'); }}><BookOpen size={16}/>{t('Reference PDFs', '专业 PDF')}<ArrowUpRight size={13}/></button></div>
-      {!import.meta.env.DEV && <div className="data-notice" role="note"><Info size={17}/><span><strong>{t('Browser edition', '网页研究版')}</strong><span className="notice-divider">·</span>{t('Import your own JSON for this session; calculations run on your device. Bookmarks stay in this browser and can be exported. Private strategy files are not hosted here.', '可导入自己的 JSON，在当前会话使用；计算在你的设备运行。收藏保存在当前浏览器，可导出迁移。网页版不附带私人策略文件。')}</span><button onClick={() => setModal('data')}>{t('Import data', '导入数据')}<ChevronRight size={14}/></button></div>}
+      {!import.meta.env.DEV && <div className="data-notice" role="note"><Info size={17}/><span><strong>{t('Shared strategy library', '公开策略库')}</strong><span className="notice-divider">·</span>{t('Reference ranges and computed models load on demand. Bookmarks stay in this browser; export them to move between devices.', '参考范围与计算模型按需载入，跨设备直接查阅。收藏保存在当前浏览器，可导出迁移。')}</span><button onClick={() => setModal('data')}>{t('Import data', '导入数据')}<ChevronRight size={14}/></button></div>}
       {studyNotice && <p className="study-notice" role="status">{studyNotice}</p>}
       {studyError && workspaceMode !== 'study' && <p className="study-notice" role="alert">{t('Bookmarks are available in memory only. Open Saved spots and export them to keep a copy.', '收藏目前仅在内存中可用，请打开“我的收藏”导出备份。')}</p>}
       <div hidden={workspaceMode !== 'published'}><PublishedCharts key={rangeRequest?.version ?? 0} initialSelection={rangeRequest?.selection} initialStudy={rangeRequest?.study} onSave={saveStudy} t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
@@ -229,7 +230,7 @@ export default function App() {
         <p className="dialog-intro">{t('Every frequency needs a source. Inspect a dataset, choose a covered spot, or bring your own licensed ranges.', '每一个频率都应有据可查。检查数据来源、选择已覆盖的场景，或导入你有权使用的范围。')}</p>
         <div className="library-shortcuts"><button className="secondary-button" onClick={() => { setWorkspaceMode('published'); setModal(null); }}>{t('Published range library', '出版范围图表库')}<ArrowUpRight size={14}/></button><button className="secondary-button" onClick={() => { setWorkspaceMode('history'); setModal(null); }}>{t('Action-history data · v2', '完整历史数据 · v2')}<ArrowUpRight size={14}/></button></div><p className="tree-muted">{t('The dataset selector and import form below are for Quick lookup (v1). Full-history files are imported within Action history.', '下方数据选择和导入属于 Quick lookup（v1）。完整历史文件请在 Action history 中导入。')}</p>
         <CoveragePanel datasets={datasets} spot={spot} t={t}/>
-        {import.meta.env.DEV && <div className="local-data-status"><p>{t(`${localDatasetCount} local datasets loaded from data/private. JSON files saved there are loaded again after refresh.`, `已从 data/private 载入 ${localDatasetCount} 个本地数据集。放入该目录的 JSON 文件会在刷新后重新载入。`)}</p>{localErrors.map((error, index) => <p className="import-error" role="alert" key={index}>{error}</p>)}</div>}
+        <div className="local-data-status"><p>{import.meta.env.DEV ? t(`${localDatasetCount} local datasets loaded from data/private. JSON files saved there are loaded again after refresh.`, `已从 data/private 载入 ${localDatasetCount} 个本地数据集。放入该目录的 JSON 文件会在刷新后重新载入。`) : t(`${localDatasetCount} published Quick datasets loaded. Full-history models are available under Action history.`, `已载入 ${localDatasetCount} 个公开快捷数据集；完整计算模型可在“完整行动历史”中选择。`)}</p>{localErrors.map((error, index) => <p className="import-error" role="alert" key={index}>{error}</p>)}</div>
         <label>{t('Active dataset', '当前数据集')}<select value={unboundQuick ? '' : datasetId} onChange={e => switchDataset(e.target.value)}>{unboundQuick && <option value="" disabled>{t('Saved source unavailable · choose explicitly', '收藏来源不可用，请重新选择')}</option>}{datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
         <div className="source-details"><div><span>{t('Provider', '提供者')}</span><strong>{dataset.source.name}</strong></div><div><span>{t('Data status', '数据状态')}</span><strong>{isDemo ? t('Synthetic demo · not GTO', '合成演示 · 非 GTO') : dataset.source.kind === 'computed' ? dataset.source.computation?.status === 'unconverged' ? t('Computed approximation · not converged', '本机近似计算 · 未确认收敛') : t('Computed approximation · restricted model', '本机近似计算 · 受限模型') : t('User import · unverified', '用户导入 · 未独立验证')}</strong></div><div><span>{t('License / usage', '许可 / 用途')}</span><strong>{dataset.source.license}</strong></div><div><span>{t('Retrieved', '获取日期')}</span><strong>{dataset.source.retrievedAt}</strong></div>{/^https?:\/\//.test(dataset.source.url) && <a href={dataset.source.url} target="_blank" rel="noreferrer">{t('Original source', '原始来源')}<ArrowUpRight size={14}/></a>}</div>
         <label>{t('Covered spots', '已覆盖场景')}<select aria-label="Covered spots" value={node?.id ?? ''} onChange={e => { const next = dataset.nodes.find(n => n.id === e.target.value); if (next) {setSpot(next.spot); setFilter('all');} }}>{!node && <option value="">{t('Choose a covered spot', '选择已覆盖的场景')}</option>}{dataset.nodes.map(n => <option key={n.id} value={n.id}>{spotTitle(n.spot)} / {n.spot.players}-max / {n.spot.stackBb} BB / {n.spot.openSizeBb}-{n.spot.threeBetSizeBb}-{n.spot.fourBetSizeBb} BB / {n.spot.format} / ante {n.spot.anteBb} / {n.spot.rake}</option>)}</select></label>

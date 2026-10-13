@@ -1,3 +1,4 @@
+import { strategyFetch } from './lib/strategy-data-client';
 import { useEffect, useState } from 'react';
 import { Database, GitBranch, Layers3 } from 'lucide-react';
 import { HANDS, normalizeHand, type Dataset, type Spot } from './lib/poker';
@@ -32,11 +33,11 @@ export default function QuickTreeLookup({ dataset, spot, query, onQueryChange, e
 
   useEffect(() => {
     setResult(null);
-    if (!enabled || !treeId || !line || !import.meta.env.DEV) return;
+    if (!enabled || !treeId || !line) return;
     const controller = new AbortController();
     setRequest({ key: requestKey, loading: true, error: '' });
     const timer = setTimeout(() => {
-      fetch(`/api/local-datasets?treeId=${encodeURIComponent(treeId)}&history=${encodeURIComponent(JSON.stringify(line.history))}`, { signal: controller.signal }).then(async response => {
+      strategyFetch(`/api/local-datasets?treeId=${encodeURIComponent(treeId)}&history=${encodeURIComponent(JSON.stringify(line.history))}`, { signal: controller.signal }).then(async response => {
         if (!response.ok) throw new Error('Could not load this computed action history.');
         const data = await response.json() as { treeDatasets: unknown[]; errors: string[] };
         if (controller.signal.aborted) return;
@@ -65,7 +66,7 @@ export default function QuickTreeLookup({ dataset, spot, query, onQueryChange, e
         return <button key={cell} style={{ background }} className={`hand-cell ${cell === hand ? 'selected-hand' : ''} ${value?.status === 'unreachable' ? 'unreachable-hand' : ''}`} aria-pressed={cell === hand} aria-label={`${cell}: ${value?.status ?? 'missing'}`} onClick={() => onQueryChange(cell)}>{cell}</button>;
       })}</div></div>
       <p className="tree-matrix-caption">{t('Hatched: missing data. Crossed out: zero historical reach. Grey: Fold. No missing hand is filled with Fold.', '斜纹表示缺数据；划线表示历史到达权重为零；灰色表示 Fold。缺失手牌不填成弃牌。')}</p>
-      {node ? <div className="tree-node-summary"><div className="tree-action-legend">{node.actions.map(action => <span key={action.id}><i style={{ background: color(action, raiseActions.indexOf(action)) }}/>{label(action)} <b>{summary ? percent(summary[action.id]) : '—'}</b></span>)}</div><p>{summary ? t('Weighted by combinations × historical reach.', '按组合数 × 历史到达权重汇总。') : t('No summary while any hand is missing or all reach is zero.', '存在缺失手牌或全部不可达时不显示汇总。')}</p></div> : <div className="tree-empty"><Database size={26}/><h3>{loading ? t('Looking up this action history…', '正在查找完整行动历史…') : t('No matching decision loaded', '尚未载入匹配的决策节点')}</h3><p>{lineError || (!import.meta.env.DEV ? t('This spot is not in the imported Quick file. The web edition cannot read your local tree library; open Action history and import the matching tree JSON to study its decisions.', '导入的快捷文件不含此场景。网页版无法读取你的本地行动树库；请进入“完整行动历史”，导入相应行动树 JSON 后查询。') : !treeId ? t('This file has no linked local action-history pack.', '该文件没有可关联的本地行动树资料包。') : t('The model may omit this branch or bet size. No frequency is inferred for an absent node.', '模型可能未包含该分支或加注尺寸；缺失节点不会推算成行动频率。'))}</p></div>}
+      {node ? <div className="tree-node-summary"><div className="tree-action-legend">{node.actions.map(action => <span key={action.id}><i style={{ background: color(action, raiseActions.indexOf(action)) }}/>{label(action)} <b>{summary ? percent(summary[action.id]) : '—'}</b></span>)}</div><p>{summary ? t('Weighted by combinations × historical reach.', '按组合数 × 历史到达权重汇总。') : t('No summary while any hand is missing or all reach is zero.', '存在缺失手牌或全部不可达时不显示汇总。')}</p></div> : <div className="tree-empty"><Database size={26}/><h3>{loading ? t('Looking up this action history…', '正在查找完整行动历史…') : t('No matching decision loaded', '尚未载入匹配的决策节点')}</h3><p>{lineError || (!treeId ? t('This file has no linked action-history pack.', '该文件没有可关联的行动树资料包。') : t('The model may omit this branch or bet size. No frequency is inferred for an absent node.', '模型可能未包含该分支或加注尺寸；缺失节点不会推算成行动频率。'))}</p></div>}
       {error && <p className="tree-error" role="alert">{error === 'SNAPSHOT_CHANGED' ? t('The calculation changed on disk. Refresh this page to load matching Quick and history snapshots.', '本机计算已更新。请刷新页面，重新载入同一版本的快捷数据与行动树。') : error}</p>}
       <div className="data-credit"><Database size={13}/><span>{found?.dataset.name ?? dataset.name}</span></div>
     </section>

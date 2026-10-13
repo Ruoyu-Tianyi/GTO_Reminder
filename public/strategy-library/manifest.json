@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "summary": "assets/summary.4bc3915ee5a30155.json.gz",
+  "published": "assets/published.76faccf9f9f2f738.json.gz",
+  "references": "assets/references.78acb3f00e791cbf.json.gz",
+  "pdfs": {
+    "rangeconverter-6max-100bb": "assets/rangeconverter-6max-100bb.60da589b490f5c90.pdf",
+    "pokercoaching-8max-100bb": "assets/pokercoaching-8max-100bb.2927bdf938a52d95.pdf",
+    "rangeconverter-9max-100bb": "assets/rangeconverter-9max-100bb.0feb70db01ab74db.pdf"
+  },
+  "trees": {
+    "computed-6max-100bb-232ecf0c6481-heads-up-lines-part-001": {
+      "file": "assets/tree.49c09c9f7d9cf2de.json.gz",
+      "packId": "pack-0bf72081b479bf63a13aba33"
+    },
+    "computed-6max-100bb-82f1d2e7b4ea-heads-up-lines-part-001": {
+      "file": "assets/tree.ecfc3c188ce47afd.json.gz",
+      "packId": "pack-8b84c68e39633e80a3b735b8"
+    },
+    "computed-6max-100bb-c225bc6dfb82-part-001": {
+      "file": "assets/tree.c95c59e48f9635bd.json.gz",
+      "packId": "pack-59b4484855a23880e382c3a3"
+    },
+    "computed-6max-100bb-c225bc6dfb82-part-002": {
+      "file": "assets/tree.eaf69da8f6e2d7d0.json.gz",
+      "packId": "pack-59b4484855a23880e382c3a3"
+    },
+    "computed-7max-100bb-3211aa8e6baf-heads-up-lines-part-001": {
+      "file": "assets/tree.5eb89a4657336623.json.gz",
+      "packId": "pack-6d7e3c80c7f5fcf998354411"
+    },
+    "computed-7max-100bb-674d90a797c2-heads-up-lines-part-001": {
+      "file": "assets/tree.ec199eb3dc96fd95.json.gz",
+      "packId": "pack-a034723032beb1fb263d77f0"
+    },
+    "computed-7max-100bb-9d127f3ad4ed-part-001": {
+      "file": "assets/tree.b8106afe60f9f46f.json.gz",
+      "packId": "pack-a4004f7baf51a011fd1a7c4a"
+    },
+    "computed-7max-100bb-9d127f3ad4ed-part-002": {
+      "file": "assets/tree.7e4dc9cf3f774fbd.json.gz",
+      "packId": "pack-a4004f7baf51a011fd1a7c4a"
+    },
+    "computed-7max-100bb-9d127f3ad4ed-part-003": {
+      "file": "assets/tree.3a03789e3b203a44.json.gz",
+      "packId": "pack-a4004f7baf51a011fd1a7c4a"
+    },
+    "computed-7max-100bb-9d127f3ad4ed-part-004": {
+      "file": "assets/tree.82d1c18dea9c7d58.json.gz",
+      "packId": "pack-a4004f7baf51a011fd1a7c4a"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-001": {
+      "file": "assets/tree.4e25f8a9ad06f147.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-002": {
+      "file": "assets/tree.01b0c43607f071de.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-003": {
+      "file": "assets/tree.440169d01052c7e1.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-004": {
+      "file": "assets/tree.99de2ae21e75acbb.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-005": {
+      "file": "assets/tree.79c853f200805a41.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-006": {
+      "file": "assets/tree.68699f295bc30b24.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-007": {
+      "file": "assets/tree.b1a182d01ef1f50d.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-008": {
+      "file": "assets/tree.18761844e317bf43.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-009": {
+      "file": "assets/tree.95bb66a755e7618d.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-010": {
+      "file": "assets/tree.47f3cb2a3918b666.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-011": {
+      "file": "assets/tree.70ad585054cfa8b0.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-5839f4f8af47-part-012": {
+      "file": "assets/tree.46738ed30363299b.json.gz",
+      "packId": "pack-b679ec78c9c26d6fb18ab883"
+    },
+    "computed-8max-100bb-d130ea4b7192-heads-up-lines-part-001": {
+      "file": "assets/tree.08c13e6be00f45d8.json.gz",
+      "packId": "pack-95dae29dafb582b07432a81d"
+    },
+    "computed-8max-100bb-d130ea4b7192-heads-up-lines-part-002": {
+      "file": "assets/tree.809a4cb1d96daed6.json.gz",
+      "packId": "pack-95dae29dafb582b07432a81d"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-001": {
+      "file": "assets/tree.80e079b8b9e7f124.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-002": {
+      "file": "assets/tree.5f412347f459736a.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-003": {
+      "file": "assets/tree.995a1d32fcadc29d.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-004": {
+      "file": "assets/tree.3dc136a8b3bd9393.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-005": {
+      "file": "assets/tree.de4b8f46be4ebbd4.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-006": {
+      "file": "assets/tree.fba139a2117def27.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-007": {
+      "file": "assets/tree.bbac60098dd8fd2e.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-008": {
+      "file": "assets/tree.0213dad3d8e361f9.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-009": {
+      "file": "assets/tree.4123d6f632646563.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-010": {
+      "file": "assets/tree.7bf97d119b988b97.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-011": {
+      "file": "assets/tree.88ee0b0ac8d5b5fb.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-012": {
+      "file": "assets/tree.0cfbea5896811d61.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-013": {
+      "file": "assets/tree.c11bf3a83288b50d.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-014": {
+      "file": "assets/tree.e07124e6e99f6d25.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-015": {
+      "file": "assets/tree.eae47b6207a3f4aa.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-016": {
+      "file": "assets/tree.18e79a63f762d394.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-017": {
+      "file": "assets/tree.0d11a2f0804712ff.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-018": {
+      "file": "assets/tree.f4b4517c4f6893dd.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-019": {
+      "file": "assets/tree.afe18f9a1656d351.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-020": {
+      "file": "assets/tree.3991c63373da8285.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-021": {
+      "file": "assets/tree.22f270cf2a6bd0a4.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-022": {
+      "file": "assets/tree.dc8c0f7c84966b38.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-023": {
+      "file": "assets/tree.c28ad2981eb24b3b.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-024": {
+      "file": "assets/tree.7e0f7cb282365067.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-025": {
+      "file": "assets/tree.7244a78810b67c66.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-026": {
+      "file": "assets/tree.9b77e44ed77d3e29.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-027": {
+      "file": "assets/tree.364daddd7a427049.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-028": {
+      "file": "assets/tree.e90b87c9de4978c2.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-029": {
+      "file": "assets/tree.d51ae12f6efc74e8.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-030": {
+      "file": "assets/tree.b39c16ff65d8cf22.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-031": {
+      "file": "assets/tree.f5d3b17ec81eb595.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-032": {
+      "file": "assets/tree.3633fdd7d21741af.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-033": {
+      "file": "assets/tree.9845437bb8f9b75e.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-034": {
+      "file": "assets/tree.1cc810e23c10c8e5.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-035": {
+      "file": "assets/tree.a54aa6aa62a7081b.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-2de9f10879d3-part-036": {
+      "file": "assets/tree.6dd553e7028c4a6e.json.gz",
+      "packId": "pack-392810a9d74cd64f43028989"
+    },
+    "computed-9max-100bb-bd3e98782cd5-heads-up-lines-part-001": {
+      "file": "assets/tree.ca92e25749c60191.json.gz",
+      "packId": "pack-c13d9c2a62b378685e643992"
+    },
+    "computed-9max-100bb-dfebf2ad3a90-heads-up-lines-part-001": {
+      "file": "assets/tree.f40dbde2c1bf240d.json.gz",
+      "packId": "pack-deecccf0fc543f722ec78cdf"
+    },
+    "computed-9max-100bb-dfebf2ad3a90-heads-up-lines-part-002": {
+      "file": "assets/tree.63fb355330625de5.json.gz",
+      "packId": "pack-deecccf0fc543f722ec78cdf"
+    }
+  },
+  "packs": {
+    "pack-0bf72081b479bf63a13aba33": {
+      "index": "assets/index.a9f76831a31ba1d6.json.gz"
+    },
+    "pack-8b84c68e39633e80a3b735b8": {
+      "index": "assets/index.259004d7ee818919.json.gz"
+    },
+    "pack-59b4484855a23880e382c3a3": {
+      "index": "assets/index.2d51eae3aba021c1.json.gz"
+    },
+    "pack-6d7e3c80c7f5fcf998354411": {
+      "index": "assets/index.c8329192b3ef4ec0.json.gz"
+    },
+    "pack-a034723032beb1fb263d77f0": {
+      "index": "assets/index.33a4a07da72e3f63.json.gz"
+    },
+    "pack-a4004f7baf51a011fd1a7c4a": {
+      "index": "assets/index.5783f816bdd3825d.json.gz"
+    },
+    "pack-b679ec78c9c26d6fb18ab883": {
+      "index": "assets/index.f4ce8416a40dc084.json.gz"
+    },
+    "pack-95dae29dafb582b07432a81d": {
+      "index": "assets/index.116822523bfce7f0.json.gz"
+    },
+    "pack-392810a9d74cd64f43028989": {
+      "index": "assets/index.546a17b69e301903.json.gz"
+    },
+    "pack-c13d9c2a62b378685e643992": {
+      "index": "assets/index.e283235bba3b4dcf.json.gz"
+    },
+    "pack-deecccf0fc543f722ec78cdf": {
+      "index": "assets/index.7f204dde29c91472.json.gz"
+    }
+  }
+}

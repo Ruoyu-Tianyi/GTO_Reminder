@@ -4,9 +4,9 @@
 
 A preflop study workspace for **6–9 player, 100 BB cash games**. Explore starting-hand ranges, complete action histories, and conditional calculations while keeping sources, model limits, and uncertainty visible.
 
-[GitHub](https://github.com/Ruoyu-Tianyi/GTO_Reminder) · [Deployment & domain](docs/DEPLOYMENT.md) · [Acceptance scope](docs/ACCEPTANCE.md) · [Data sources](docs/DATA_SOURCES.md) · [Roadmap](docs/ROADMAP.md)
+[Open the app](https://gto-reminder.vercel.app) · [GitHub](https://github.com/Ruoyu-Tianyi/GTO_Reminder) · [Deployment & domain](docs/DEPLOYMENT.md) · [Acceptance scope](docs/ACCEPTANCE.md) · [Data sources](docs/DATA_SOURCES.md) · [Roadmap](docs/ROADMAP.md)
 
-Planned address: `https://gto.tianyizhou.cn` (available after Vercel deployment and DNS configuration). The repository and package names remain `GTO_Reminder` / `gto-reminder`.
+The Vercel production site is live, and automatic deployment from GitHub `main` has been verified. The custom domain `https://gto.tianyizhou.cn` is connected to the project and awaits Alibaba Cloud DNS configuration; use “Open the app” above until it resolves. The repository and package names remain `GTO_Reminder` / `gto-reminder`.
 
 ## Features
 
@@ -21,7 +21,7 @@ The interface supports Chinese / English, a dark study theme, and mobile layouts
 
 ## Coverage and accuracy
 
-These figures describe the **complete local dataset audited on October 13, 2026**. They are not the amount of data bundled with this repository or the public website.
+The static library's publication scope is shown below, based on the **local dataset audited on October 13, 2026**. Compressed snapshots are published with the app, preserving each source's precision, model conditions, and quality labels.
 
 | Dataset | Count and interpretation |
 | --- | --- |
@@ -68,11 +68,14 @@ npm run build    # TypeScript checks and production build
 npm run preview  # Preview dist/ locally
 ```
 
-## Website, private data, and imports
+## Public strategy library and local data
 
-The repository includes the interface, demo data, source indexes, and generation scripts. **PDFs, transcribed frequencies, solver results, and migration bundles under `data/private/` are ignored by Git and excluded from production builds.** The public static deployment provides the interface and demos; restore or import the complete local dataset separately.
+The app uses a **fully static deployment** with no sign-in, backend database, or Supabase requirement. Selected application data is exported to `public/strategy-library/`: reference transcriptions, computational models, and explicitly allowlisted original PDFs. Compressed strategy shards load on demand. Gzip strategy data totals approximately **19.3 MiB**, plus **52.3 MiB** for three PDFs: **71.6 MiB** overall. PDFs load only when opened; the initial page does not download the entire library.
 
-- Local development reads supported files from `data/private/` and validates them before listing their sources.
+`data/private/` remains ignored by Git. The publication process exports only designated application files; runtime logs, solver checkpoints, audits, migration ZIPs, and other working files are excluded. The public snapshot includes the 434 categories, 325 reference scenarios, 11 models, and 29,425 history decisions listed above.
+
+- **On the website:** the browser loads built-in ranges from the static library. Open the same site on another computer or phone to query them, without restoring local working data on every device.
+- **During local development:** the local data API takes priority; production builds read the static snapshot. After changing local source data, run `npm run export:library`, then commit, build, and publish the generated static directory with the code to update the website.
 - Download a template from data management, import authorized JSON, and select the matching scenario. Use v1 for quick nodes and v2 for complete histories; see the [v1 format](docs/DATA_FORMAT.md) and [v2 format](docs/DATA_FORMAT_V2.md).
 - Manually imported strategies stay in the current page's memory and must be imported again after a refresh. The app does not upload those ranges to a server.
 - Language preferences and study bookmarks are stored in the current browser. Bookmarks contain neither strategy frequencies nor PDFs; export and import them when changing devices.
@@ -80,7 +83,7 @@ The repository includes the interface, demo data, source indexes, and generation
 
 ## Work across devices
 
-**Sync code with Git, copy private data in verified migration bundles, and move study bookmarks through the interface.** These are separate and do not sync automatically through the cloud.
+**Open the same website to study the built-in strategies on any device.** Move bookmarks through the interface, and sync development code and public data snapshots with Git. Personal bookmarks and manually imported strategies do not sync automatically through the cloud.
 
 Before working on another device, update code and dependencies:
 
@@ -89,7 +92,7 @@ git pull --ff-only
 npm ci
 ```
 
-If you already have the complete local dataset, create a migration bundle using the Python standard-library tool. Wait for calculations and data writes to finish, then copy the generated file to the other device:
+If another development machine also needs to repeat transcription, run solvers, or update a data snapshot, you can separately migrate the full local working dataset. Use the Python standard-library tool after calculations and data writes finish, then copy the generated file to that device:
 
 ```bash
 python scripts/pack-local-data.py
@@ -100,7 +103,7 @@ python scripts/pack-local-data.py --restore "path/to/bundle.zip"
 
 The tool validates the manifest, SHA-256 hashes, and sizes. It skips identical files, refuses conflicting overwrites, and records the restore operation. Pack on the source device; verify and restore on the destination. See [data migration](docs/DATA_MIGRATION.md) for supported files, rollback, and interrupted restores.
 
-Without a bundle, follow the [public-chart notes](docs/PUBLIC_CHARTS.md) and run the script below to restore reference originals and rebuild their transcriptions. It requires Python, `pypdf`, `Pillow`, and `numpy`. Generate approximate model data separately using the [local solver guide](docs/LOCAL_SOLVER.md).
+To rebuild source data without a bundle, follow the [public-chart notes](docs/PUBLIC_CHARTS.md) and run the script below to restore reference originals and rebuild their transcriptions. It requires Python, `pypdf`, `Pillow`, and `numpy`. Generate approximate model data separately using the [local solver guide](docs/LOCAL_SOLVER.md). These steps are unnecessary for ordinary website queries.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/restore-reference-data.ps1
@@ -120,4 +123,4 @@ The detailed guides below are currently in Chinese; code examples and schema ide
 | [Public charts](docs/PUBLIC_CHARTS.md) · [8-player transcription](docs/POKERCOACHING_TRANSCRIPTION.md) | Originals, page indexes, transcription precision, and gaps |
 | [Data sources](docs/DATA_SOURCES.md) · [Roadmap](docs/ROADMAP.md) | Source integration and further research |
 
-React 19 · TypeScript · Vite · Vitest · Native CSS. Queries and interactive calculations run in the browser; local scripts restore private data and run independent solvers.
+React 19 · TypeScript · Vite · Vitest · Native CSS. Vercel hosts the app and static strategy snapshots. Queries and interactive calculations run in the browser; local scripts restore source data, run independent solvers, and export snapshots. See the [deployment guide](docs/DEPLOYMENT.md#日常发布与数据更新) for the data update workflow.

@@ -1,3 +1,4 @@
+import { strategyFetch } from './lib/strategy-data-client';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowDownToLine, ArrowUpRight, RefreshCw } from 'lucide-react';
 import ComputationNotice from './ComputationNotice';
@@ -16,7 +17,7 @@ const EMPTY_INPUT: InventoryInput = { publishedCharts: null, referenceRanges: nu
 const number = (value: number | undefined) => value === undefined ? '—' : value.toLocaleString();
 
 async function readJson<T>(url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal });
+  const response = await strategyFetch(url, { signal });
   if (!response.ok) throw new Error(`${url.split('?')[0]}: HTTP ${response.status}`);
   return response.json() as Promise<T>;
 }
@@ -26,7 +27,7 @@ export default function DataInventory({ t, onReference, onTree }: {
 }) {
   const [input, setInput] = useState<InventoryInput>(EMPTY_INPUT);
   const [errors, setErrors] = useState<string[]>([]);
-  const [loading, setLoading] = useState(import.meta.env.DEV);
+  const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
   const [updatedAt, setUpdatedAt] = useState('');
   const [players, setPlayers] = useState(0);
@@ -48,7 +49,6 @@ export default function DataInventory({ t, onReference, onTree }: {
   })[quality];
 
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
     const controller = new AbortController();
     setLoading(true); setInput(EMPTY_INPUT); setErrors([]);
     async function load() {
@@ -104,11 +104,11 @@ export default function DataInventory({ t, onReference, onTree }: {
   }
 
   return <section className="inventory" aria-label={t('Data coverage overview', '数据覆盖总览')}>
-    <div className="inventory-header"><div><h2>{t('What can I study?', '目前有哪些数据可学？')}</h2><p>{t('See the references and calculations available on this computer, then open a range or model directly. Counts describe stored data, not complete GTO coverage.', '查看这台电脑已载入的参考图与计算结果，直接进入范围或模型。统计反映已有数据，不代表完整 GTO 覆盖率。')}</p></div><div className="inventory-tools">
-      <button className="secondary-button" disabled={loading || !import.meta.env.DEV} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14}/>{t('Refresh inventory', '刷新清单')}</button>
+    <div className="inventory-header"><div><h2>{t('What can I study?', '目前有哪些数据可学？')}</h2><p>{t('Explore the loaded reference ranges and computed models. Counts describe available data, not complete GTO coverage.', '查看已载入的参考图与计算结果，直接进入范围或模型。统计反映已有数据，不代表完整 GTO 覆盖率。')}</p></div><div className="inventory-tools">
+      <button className="secondary-button" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14}/>{t('Refresh inventory', '刷新清单')}</button>
       <button className="secondary-button" disabled={loading || !updatedAt} onClick={exportInventory}><ArrowDownToLine size={14}/>{t('Export inventory', '导出清单')}</button>
     </div></div>
-    <p role="status" className="inventory-status">{loading ? t('Checking local references and model summaries…', '正在检查本地参考图与计算模型…') : !import.meta.env.DEV ? t('The web edition cannot inspect your private data folder. Dashes mean uninspected, not zero coverage. Browser imports appear in their own workspace; run the local development server to audit files on your computer.', '网页版无法检查你的私人数据目录。横线表示未检查，不代表覆盖为零。浏览器导入的数据请在相应模块查看；需启动本地开发服务才能统计电脑上的文件。') : `${t('Last checked', '检查时间')} · ${updatedAt ? new Date(updatedAt).toLocaleString() : '—'}`}</p>
+    <p role="status" className="inventory-status">{loading ? t('Loading reference ranges and model summaries…', '正在载入参考范围与计算模型…') : `${t('Last loaded', '载入时间')} · ${updatedAt ? new Date(updatedAt).toLocaleString() : '—'}`}</p>
     {(errors.length > 0 || inventory.warnings.length > 0) && <div className="tree-load-errors inventory-errors" role="alert"><strong>{t('Some data could not be counted. Totals may be incomplete.', '部分数据未能统计，以下总数可能不完整。')}</strong>{[...errors, ...inventory.warnings].map((error, index) => <p key={index}>{error}</p>)}</div>}
     <div className="inventory-metrics">
       <div className="inventory-metric"><span>{t('Source charts', '原图转录')}</span><strong>{number(refs?.original.charts)}</strong><p>{t('Simplified or image-measured frequencies', '出版简化频率或图片测量频率')}</p></div>
@@ -161,6 +161,6 @@ export default function DataInventory({ t, onReference, onTree }: {
       })}</div>{packs?.length === 0 && <p className="inventory-note">{t('No local tree models for this selection.', '所选人数暂无本地行动树模型。')}</p>}
       <p className="inventory-note">{t('Quick lookup nodes', '快捷查询节点')} · {t('Computed', '本机计算')} {number(local?.bySource.computed.quickNodes)} · {t('Imported', '外部导入')} {number(local?.bySource.imported.quickNodes)} · {t('Demo', '演示')} {number(local?.bySource.demo.quickNodes)}. {t('These can overlap the tree decisions above.', '这些节点可能与上面的行动树决策重叠。')}</p>
     </section>
-    <p className="inventory-note">{t('This inventory reads local files. Temporary browser imports are listed inside their own workspace. To move between computers, sync the code and separately transfer your private data bundle; exporting this inventory does not include strategy frequencies.', '清单读取本地文件，浏览器临时导入的数据在各自模块中查看。换电脑时需同步代码并另行迁移私人数据包；导出本清单不包含策略频率。')}</p>
+    <p className="inventory-note">{t('This inventory describes the current strategy library. Temporary imports are listed inside their own workspace. Published data is available on every device; bookmarks can be exported separately. This inventory export does not include strategy frequencies.', '清单展示当前策略库，临时导入的数据在各自模块中查看。公开策略可跨设备直接访问，个人收藏另行导出迁移；导出本清单不包含策略频率。')}</p>
   </section>;
 }

@@ -4,9 +4,9 @@
 
 面向 **6–9 人、100 BB 现金桌**的翻前策略学习工作台。用范围矩阵、完整行动历史与条件计算研究每一手牌，并保留数据来源、模型限制和不确定性。
 
-[GitHub](https://github.com/Ruoyu-Tianyi/GTO_Reminder) · [部署与域名](docs/DEPLOYMENT.md) · [验收范围](docs/ACCEPTANCE.md) · [数据来源](docs/DATA_SOURCES.md) · [路线图](docs/ROADMAP.md)
+[在线使用](https://gto-reminder.vercel.app) · [GitHub](https://github.com/Ruoyu-Tianyi/GTO_Reminder) · [部署与域名](docs/DEPLOYMENT.md) · [验收范围](docs/ACCEPTANCE.md) · [数据来源](docs/DATA_SOURCES.md) · [路线图](docs/ROADMAP.md)
 
-计划访问地址：`https://gto.tianyizhou.cn`（Vercel 部署及域名解析完成后启用）。仓库名和程序包名继续保留 `GTO_Reminder` / `gto-reminder`。
+Vercel 生产站点已上线，GitHub `main` 自动部署已验证。正式域名 `https://gto.tianyizhou.cn` 已绑定项目，待阿里云 DNS 解析生效后启用；目前请使用上方“在线使用”入口。仓库名和程序包名继续保留 `GTO_Reminder` / `gto-reminder`。
 
 ## 可以做什么
 
@@ -21,7 +21,7 @@
 
 ## 数据范围与精度
 
-以下为 **2026-10-13 本机完整数据集**的验收记录，并非 GitHub 仓库或公共网站自带的数据量：
+静态策略库的发布范围如下，来源于 **2026-10-13 本机数据集**的验收记录。数据以压缩快照随网页发布，保留各来源的精度、模型条件与质量标识：
 
 | 内容 | 数量与口径 |
 | --- | --- |
@@ -68,11 +68,14 @@ npm run build    # TypeScript 检查和生产构建
 npm run preview  # 在本机预览 dist/
 ```
 
-## 网页、私人数据与导入
+## 公开策略库与本地数据
 
-代码仓库包含界面、演示数据、来源索引与生成脚本。**`data/private/` 中的 PDF、转录频率、求解结果及迁移包被 Git 忽略，不进入生产构建。** 公共静态部署提供网页功能与演示；本机完整数据集需要自行恢复或导入。
+网页采用**全静态部署**，无需登录、后端数据库或 Supabase。选定的业务数据导出至 `public/strategy-library/`，包括参考转录、计算模型与明确列入白名单的原 PDF。策略数据按压缩分片按需加载，gzip 策略数据约 **19.3 MiB**，3 份 PDF 约 **52.3 MiB**，整个发布包约 **71.6 MiB**。PDF 只在打开原图时载入，首屏不会下载整库。
 
-- 本地开发模式会读取 `data/private/` 中受支持的文件，校验后加入可用来源。
+`data/private/` 继续被 Git 忽略，发布流程只导出指定的业务文件；运行日志、求解 checkpoints、审计文件、迁移 ZIP 和其他工作文件不发布。公开快照包含上表的 434 类场景、325 个参考场景、11 个模型和 29,425 个历史决策。
+
+- **线上使用**：浏览器从静态策略库加载内置范围，可在不同电脑或手机上直接查询，无需每台设备恢复本机数据。
+- **本地开发**：优先使用本地数据 API；生产构建读取静态快照。更新本机源数据后，运行 `npm run export:library`，将生成的静态目录与代码一起提交、构建和发布，线上内容才会更新。
 - 使用网页的数据管理入口下载模板、导入获授权的 JSON，再选择对应场景。v1 用于快捷节点，v2 用于完整历史；见[格式说明 v1](docs/DATA_FORMAT.md)和[格式说明 v2](docs/DATA_FORMAT_V2.md)。
 - 手动导入的策略仅保存在当前页面内存，刷新后需重新导入；应用不会将这些范围上传到服务器。
 - 语言偏好和查询收藏保存在当前浏览器。收藏不包含策略频率或 PDF，换电脑需单独导出、导入。
@@ -80,7 +83,7 @@ npm run preview  # 在本机预览 dist/
 
 ## 多设备协作
 
-**代码通过 Git 同步，私人数据通过校验后的迁移包复制，学习收藏通过网页导入、导出。** 三者分别保存，不会自动云同步。
+**查阅内置策略只需打开同一个网站。** 收藏通过网页导入、导出；开发代码和公开数据快照通过 Git 同步。个人收藏与手动导入的策略不会自动云同步。
 
 每次开始工作先更新代码和依赖：
 
@@ -89,7 +92,7 @@ git pull --ff-only
 npm ci
 ```
 
-已有完整本机数据时，使用 Python 标准库工具打包。在计算与数据写入结束后执行，并将生成的文件复制到另一台电脑：
+如果另一台电脑还需要重新转录、求解或更新数据快照，可额外迁移完整本机工作数据。使用 Python 标准库工具，在计算与数据写入结束后打包，再将文件复制到另一台电脑：
 
 ```bash
 python scripts/pack-local-data.py
@@ -100,7 +103,7 @@ python scripts/pack-local-data.py --restore "path/to/bundle.zip"
 
 工具核验清单、SHA-256 和大小；相同文件跳过，冲突拒绝覆盖，并保留恢复记录。源电脑执行打包，目标电脑执行校验与恢复。支持文件、回滚和中断恢复详见[数据迁移说明](docs/DATA_MIGRATION.md)。
 
-没有迁移包时，可按[公开图表记录](docs/PUBLIC_CHARTS.md)恢复参考原稿，运行下列脚本重建参考转录；需要 Python、`pypdf`、`Pillow`、`numpy`。近似计算结果另按[本机求解说明](docs/LOCAL_SOLVER.md)生成。
+需要重建源数据且没有迁移包时，可按[公开图表记录](docs/PUBLIC_CHARTS.md)恢复参考原稿，运行下列脚本重建参考转录；需要 Python、`pypdf`、`Pillow`、`numpy`。近似计算结果另按[本机求解说明](docs/LOCAL_SOLVER.md)生成。日常网页查询无需执行这些步骤。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/restore-reference-data.ps1
@@ -118,4 +121,4 @@ powershell -ExecutionPolicy Bypass -File scripts/restore-reference-data.ps1
 | [公开图表](docs/PUBLIC_CHARTS.md) · [8 人转录](docs/POKERCOACHING_TRANSCRIPTION.md) | 原稿、页码、转录精度与缺口 |
 | [数据来源](docs/DATA_SOURCES.md) · [路线图](docs/ROADMAP.md) | 来源接入与后续研究 |
 
-React 19 · TypeScript · Vite · Vitest · 原生 CSS。网页在浏览器中查询和计算，本机脚本负责私人数据恢复与独立求解。
+React 19 · TypeScript · Vite · Vitest · 原生 CSS。Vercel 托管网页与静态策略快照；查询和交互计算在浏览器运行，本机脚本负责源数据恢复、独立求解与快照导出。更新数据的发布步骤见[部署指南](docs/DEPLOYMENT.md#日常发布与数据更新)。

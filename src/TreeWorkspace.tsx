@@ -1,3 +1,4 @@
+import { strategyFetch } from './lib/strategy-data-client';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpRight, Database, GitBranch, RotateCcw, Undo2, Upload } from 'lucide-react';
 import { HANDS, getPositions, normalizeHand } from './lib/poker';
@@ -84,7 +85,7 @@ export default function TreeWorkspace({ t, onReference, openRequest, onSave }: {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setLocatingNode(true);
-      fetch(`/api/local-datasets?treeId=${encodeURIComponent(dataset.id)}&history=${encodeURIComponent(JSON.stringify(history))}`, { signal: controller.signal }).then(async response => {
+      strategyFetch(`/api/local-datasets?treeId=${encodeURIComponent(dataset.id)}&history=${encodeURIComponent(JSON.stringify(history))}`, { signal: controller.signal }).then(async response => {
         if (!response.ok) throw new Error('Could not look up this computed decision.');
         const result = await response.json() as { treeDatasets: unknown[]; errors: string[] };
         if (controller.signal.aborted) return;
@@ -103,17 +104,16 @@ export default function TreeWorkspace({ t, onReference, openRequest, onSave }: {
   }, [lookupKey, Boolean(localNode), dataset?.id, dataset?.source.kind, sourceSnapshot, treeLibrary]);
 
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
     const controller = new AbortController();
-    fetch('/api/local-datasets?summary=1', { signal: controller.signal }).then(async response => {
-      if (!response.ok) throw new Error('Local data could not be loaded.');
+    strategyFetch('/api/local-datasets?summary=1', { signal: controller.signal }).then(async response => {
+      if (!response.ok) throw new Error('Strategy library could not be loaded.');
       const result = await response.json() as { treeDatasets?: unknown[]; treeLibrary?: typeof treeLibrary; errors?: string[] };
       if (controller.signal.aborted) return;
       const files = (result.treeDatasets ?? []).map(validateTreeDataset);
       setDatasets(current => [...current, ...files.filter(file => !current.some(existing => existing.id === file.id))]);
       setLoadErrors(result.errors ?? []);
       setTreeLibrary(result.treeLibrary ?? []);
-    }).catch(error => { if (!controller.signal.aborted) setLoadErrors([error instanceof Error ? error.message : 'Local data unavailable']); });
+    }).catch(error => { if (!controller.signal.aborted) setLoadErrors([error instanceof Error ? error.message : 'Strategy library unavailable']); });
     return () => { controller.abort(); datasetRequest.current?.abort(); };
   }, [openRequest]);
 
@@ -142,10 +142,10 @@ export default function TreeWorkspace({ t, onReference, openRequest, onSave }: {
     const binding = saved.binding;
     const existing = datasets.find(item => matchesStudyDataset(binding, item));
     if (existing && uploadedIds.current.has(existing.id)) { setSelectedId(existing.id); setLoadingDataset(false); return; }
-    if (uploadedIds.current.has(binding.datasetId) || !import.meta.env.DEV) { setLoadingDataset(false); setMessage(missing); return; }
+    if (uploadedIds.current.has(binding.datasetId)) { setLoadingDataset(false); setMessage(missing); return; }
     setLoadingDataset(true);
     try {
-      const response = await fetch(`/api/local-datasets?treeId=${encodeURIComponent(binding.datasetId)}`, {signal: controller.signal});
+      const response = await strategyFetch(`/api/local-datasets?treeId=${encodeURIComponent(binding.datasetId)}`, {signal: controller.signal});
       if (!response.ok) throw new Error(missing);
       const result = await response.json() as {treeDatasets: unknown[]; errors: string[]};
       if (controller.signal.aborted) return;
@@ -186,7 +186,7 @@ export default function TreeWorkspace({ t, onReference, openRequest, onSave }: {
     if (!incoming && id && treeLibrary.some(item => item.id === id)) {
       const controller = new AbortController(); datasetRequest.current = controller; setLoadingDataset(true);
       try {
-        const response = await fetch(`/api/local-datasets?treeId=${encodeURIComponent(id)}`, { signal: controller.signal });
+        const response = await strategyFetch(`/api/local-datasets?treeId=${encodeURIComponent(id)}`, { signal: controller.signal });
         if (!response.ok) throw new Error('Could not load this local tree dataset.');
         const data = await response.json() as { treeDatasets: unknown[]; errors: string[] };
         if (controller.signal.aborted) return;
@@ -265,6 +265,6 @@ export default function TreeWorkspace({ t, onReference, openRequest, onSave }: {
     {state?.nextActor && <LocalCalculation key={JSON.stringify([game, history])} t={t} context={JSON.stringify({ game, history })} opponents={state.seats.filter(seat => !seat.folded).length - 1} hand={query}/>}
     {(stateError || error) && <p className="tree-error" role="alert">{stateError || error}</p>}
     {message && <p className="tree-message" role="status">{message}</p>}
-    {loadErrors.length > 0 && <details className="tree-load-errors"><summary>{t('Local data loading issues', '本地数据载入问题')}</summary>{loadErrors.map((error, index) => <p key={index}>{error}</p>)}</details>}
+    {loadErrors.length > 0 && <details className="tree-load-errors"><summary>{t('Strategy loading issues', '策略数据载入问题')}</summary>{loadErrors.map((error, index) => <p key={index}>{error}</p>)}</details>}
   </div>;
 }
