@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getPositions, type Position } from './poker';
 import { replayPreflop, type PreflopConfig } from './preflop';
-import { buildPreset, LINE_PRESETS, type LinePreset } from './preflop-presets';
+import { buildPreset, getPresetError, LINE_PRESETS, type LinePreset } from './preflop-presets';
 
 // These are example betting histories, not solved strategies or poker advice.
 const EXPECTED_ACTOR: Record<LinePreset, Position> = {
@@ -91,5 +91,36 @@ describe('example line boundaries', () => {
 
   it('rejects an example whose requested raises exceed a short stack', () => {
     expect(() => buildPreset({ players: 6, stackBb: 10, anteBb: 0 }, 'four-bet')).toThrow();
+  });
+});
+
+describe('examples using declared computed model sizes', () => {
+  const config = { players: 8, stackBb: 100, anteBb: 0 };
+  const tree = { openSizeBb: 2.5, threeBetSizeBb: 10, fourBetSizeBb: 30, maxRaises: 4, limp: true, limpRaiseBb: 2.5 };
+  it('uses 2.5/10/30 instead of the generic 2.5/8/22 and preserves intended actors', () => {
+    for (const { id } of LINE_PRESETS) {
+      expect(replayPreflop(config, buildPreset(config, id, tree)).nextActor).toBe(EXPECTED_ACTOR[id]);
+      expect(getPresetError(config, id, tree)).toBeNull();
+    }
+    expect(buildPreset(config, 'three-bet', tree).filter(action => action.type === 'raise').map(action => action.amountBb)).toEqual([2.5, 10]);
+    expect(buildPreset(config, 'four-bet', tree).filter(action => action.type === 'raise').map(action => action.amountBb)).toEqual([2.5, 10, 30]);
+    expect(buildPreset(config, 'five-bet', tree).filter(action => action.type === 'raise').map(action => action.amountBb)).toEqual([2.5, 10, 30, 100]);
+    const limpRaise = replayPreflop(config, buildPreset(config, 'limp-raise', tree));
+    expect(limpRaise.currentBetBb).toBe(2.5);
+    expect(limpRaise.legal.callAmountBb).toBe(1.5);
+  });
+  it('limits observed historical raises without blocking the decision facing the final allowed raise', () => {
+    const restricted = { ...tree, maxRaises: 2, limp: false };
+    expect(getPresetError(config, 'three-bet', restricted)).toBeNull();
+    expect(getPresetError(config, 'cold-four', restricted)).toBeNull();
+    for (const preset of ['four-bet', 'five-bet'] as const) expect(getPresetError(config, preset, restricted)).toContain('2-raise limit');
+    for (const preset of ['limp', 'limp-raise'] as const) expect(getPresetError(config, preset, restricted)).toContain('does not include unopened limps');
+  });
+  it('does not guess an undeclared limp raise or turn all-in placeholders into actions', () => {
+    expect(getPresetError(config, 'limp-raise', { ...tree, limpRaiseBb: undefined })).toContain('does not declare');
+    const terminal = { ...tree, openSizeBb: 30, threeBetSizeBb: 100, fourBetSizeBb: 100 };
+    expect(getPresetError(config, 'three-bet', terminal)).toBeNull();
+    expect(getPresetError(config, 'four-bet', terminal)).not.toBeNull();
+    expect(getPresetError({ ...config, stackBb: 20 }, 'four-bet', tree)).not.toBeNull();
   });
 });

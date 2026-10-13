@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpRight, Database, GitBranch, RotateCcw, Undo2, Upload } from 'lucide-react';
 import { HANDS, getPositions, normalizeHand } from './lib/poker';
 import { replayPreflop, type PreflopAction, type PreflopState } from './lib/preflop';
-import { LINE_PRESETS, buildPreset, type LinePreset } from './lib/preflop-presets';
-import { createTreeTemplate, findTreeNode, treeRangeSummary, validateTreeDataset, type StrategyChoice, type TreeDataset, type TreeGame } from './lib/tree-strategy';
+import { LINE_PRESETS, buildPreset, getPresetError, type LinePreset } from './lib/preflop-presets';
+import { createTreeTemplate, findTreeNode, gameKey, treeRangeSummary, validateTreeDataset, type StrategyChoice, type TreeDataset, type TreeGame, type TreeNode } from './lib/tree-strategy';
 import './tree.css';
 import { findHistoryReferences } from './lib/tree-references';
+import LocalCalculation from './LocalCalculation';
+import ComputationNotice from './ComputationNotice';
+import { inventoryPackKey } from './lib/data-inventory';
 
 type Translate = (en: string, zh: string) => string;
 const INITIAL_GAME: TreeGame = { players: 6, stackBb: 100, anteBb: 0, format: 'cash', rake: '5% · 3 BB cap' };
@@ -20,24 +23,39 @@ function saveJson(value: unknown, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function TreeWorkspace({ t, onReference }: { t: Translate; onReference: (id: string, page: number) => void }) {
+export default function TreeWorkspace({ t, onReference, openRequest }: { t: Translate; onReference: (id: string, page: number) => void; openRequest?: { id: string; version: number } }) {
   const [game, setGame] = useState<TreeGame>(INITIAL_GAME);
   const [history, setHistory] = useState<PreflopAction[]>(() => buildPreset(INITIAL_GAME, 'unopened'));
   const [raiseTo, setRaiseTo] = useState('2.5');
   const [query, setQuery] = useState('AKs');
   const [datasets, setDatasets] = useState<TreeDataset[]>([]);
+  const [treeLibrary, setTreeLibrary] = useState<Array<Pick<TreeDataset, 'id' | 'name' | 'game' | 'source'> & { nodeCount: number }>>([]);
+  const [loadingDataset, setLoadingDataset] = useState(false);
+  const [remoteNode, setRemoteNode] = useState<{ key: string; node: TreeNode } | null>(null);
+  const [locatingNode, setLocatingNode] = useState(false);
+  const datasetRequest = useRef<AbortController | null>(null);
   const [selectedId, setSelectedId] = useState('');
   const [error, setError] = useState('');
   const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [unequal, setUnequal] = useState(false);
-  const [preset, setPreset] = useState<LinePreset>('unopened');
+  const [preset, setPreset] = useState<LinePreset | ''>('unopened');
+  const [presetError, setPresetError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+  const openedRequest = useRef<number | undefined>(undefined);
+  const uploadedIds = useRef(new Set<string>());
   let state: PreflopState | undefined;
   let stateError = '';
   try { state = replayPreflop(game, history); } catch (error) { stateError = error instanceof Error ? error.message : 'Invalid action history'; }
   const dataset = datasets.find(item => item.id === selectedId);
-  const node = dataset && state ? findTreeNode(dataset, game, history) : undefined;
+  const presetSizes = dataset?.source.kind === 'computed' ? dataset.source.computation?.tree : undefined;
+  const sourceSnapshot = JSON.stringify(dataset?.source);
+  const packKey = inventoryPackKey;
+  const localPacks = treeLibrary.filter((item, index) => !uploadedIds.current.has(item.id) && treeLibrary.findIndex(other => packKey(other) === packKey(item)) === index);
+  const packNodeCount = dataset && !uploadedIds.current.has(dataset.id) ? treeLibrary.filter(item => packKey(item) === packKey(dataset)).reduce((sum, item) => sum + item.nodeCount, 0) : 0;
+  const lookupKey = JSON.stringify([selectedId, sourceSnapshot, game, history]);
+  const localNode = dataset && state ? findTreeNode(dataset, game, history) : undefined;
+  const node = localNode ?? (remoteNode?.key === lookupKey ? remoteNode.node : undefined);
   const summary = node ? treeRangeSummary(node) : null;
   const references = state ? findHistoryReferences(game, history) : [];
   const hand = normalizeHand(query);
@@ -49,22 +67,58 @@ export default function TreeWorkspace({ t, onReference }: { t: Translate; onRefe
   const knownHands = node ? Object.values(node.hands).filter(row => row.status === 'available').length : 0;
 
   useEffect(() => {
+    setRemoteNode(null); setLocatingNode(false);
+    if (!dataset || localNode || uploadedIds.current.has(dataset.id) || dataset.source.kind !== 'computed' || !state?.nextActor || gameKey(dataset.game) !== gameKey(game) || !treeLibrary.some(item => item.id === dataset.id)) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setLocatingNode(true);
+      fetch(`/api/local-datasets?treeId=${encodeURIComponent(dataset.id)}&history=${encodeURIComponent(JSON.stringify(history))}`, { signal: controller.signal }).then(async response => {
+        if (!response.ok) throw new Error('Could not look up this computed decision.');
+        const result = await response.json() as { treeDatasets: unknown[]; errors: string[] };
+        if (controller.signal.aborted) return;
+        const candidates = result.treeDatasets.map(validateTreeDataset);
+        if (candidates.some(item => JSON.stringify(item.source) !== sourceSnapshot)) {
+          setDatasets(current => current.filter(item => item.id !== dataset.id)); setSelectedId('');
+          throw new Error(t('This computed dataset was updated on disk. Select it again to load the new snapshot.', '本机计算数据已更新。请重新选择数据集，载入新的计算快照。'));
+        }
+        const match = candidates.map(item => findTreeNode(item, game, history)).find(Boolean);
+        if (match) setRemoteNode({ key: lookupKey, node: match });
+        if (result.errors.length) setError(result.errors.join(' '));
+      }).catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'Decision lookup failed.'); })
+        .finally(() => { if (!controller.signal.aborted) setLocatingNode(false); });
+    }, 200);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [lookupKey, Boolean(localNode), dataset?.id, dataset?.source.kind, sourceSnapshot, treeLibrary]);
+
+  useEffect(() => {
     if (!import.meta.env.DEV) return;
     const controller = new AbortController();
-    fetch('/api/local-datasets', { signal: controller.signal }).then(async response => {
+    fetch('/api/local-datasets?summary=1', { signal: controller.signal }).then(async response => {
       if (!response.ok) throw new Error('Local data could not be loaded.');
-      const result = await response.json() as { treeDatasets?: unknown[]; errors?: string[] };
+      const result = await response.json() as { treeDatasets?: unknown[]; treeLibrary?: typeof treeLibrary; errors?: string[] };
+      if (controller.signal.aborted) return;
       const files = (result.treeDatasets ?? []).map(validateTreeDataset);
       setDatasets(current => [...current, ...files.filter(file => !current.some(existing => existing.id === file.id))]);
       setLoadErrors(result.errors ?? []);
+      setTreeLibrary(result.treeLibrary ?? []);
     }).catch(error => { if (!controller.signal.aborted) setLoadErrors([error instanceof Error ? error.message : 'Local data unavailable']); });
-    return () => controller.abort();
-  }, []);
+    return () => { controller.abort(); datasetRequest.current?.abort(); };
+  }, [openRequest]);
 
+  function cancelDatasetLoad() {
+    datasetRequest.current?.abort(); setLoadingDataset(false); openedRequest.current = openRequest?.version;
+  }
+  useEffect(() => {
+    if (!openRequest || openedRequest.current === openRequest.version || !treeLibrary.some(item => item.id === openRequest.id)) return;
+    openedRequest.current = openRequest.version;
+    void selectDataset(openRequest.id, true);
+  }, [openRequest, treeLibrary]);
   function changeGame(patch: Partial<TreeGame>) {
+    cancelDatasetLoad(); setPreset('');
     setGame(current => ({ ...current, ...patch })); setHistory([]); setError(''); setMessage('');
   }
   function append(type: PreflopAction['type'], amountBb?: number) {
+    cancelDatasetLoad(); setPreset('');
     if (!state?.nextActor) return;
     try {
       const action: PreflopAction = { actor: state.nextActor, type, ...(amountBb === undefined ? {} : { amountBb }) };
@@ -72,30 +126,60 @@ export default function TreeWorkspace({ t, onReference }: { t: Translate; onRefe
     } catch (error) { setError(error instanceof Error ? error.message : 'Invalid action'); }
   }
   function usePreset(id: LinePreset) {
-    setPreset(id);
-    try { setHistory(buildPreset(game, id)); setError(''); } catch (error) { setError(error instanceof Error ? error.message : 'This line is unavailable with these stacks.'); }
+    cancelDatasetLoad();
+    try { const next = buildPreset(game, id, presetSizes); setHistory(next); setPreset(id); setPresetError(''); setError(''); }
+    catch (error) { setPresetError(error instanceof Error ? error.message : 'This line is unavailable with these stacks.'); }
   }
-  function selectDataset(id: string) {
-    const incoming = datasets.find(item => item.id === id); setSelectedId(id);
-    if (incoming) { setGame(incoming.game); setHistory(incoming.nodes[0].history); setUnequal(Boolean(incoming.game.stacksBb)); setError(''); }
+  async function selectDataset(id: string, refresh = false) {
+    if (!refresh) openedRequest.current = openRequest?.version;
+    if (refresh && uploadedIds.current.has(id)) {
+      setError(t('This local model shares an ID with your temporary upload. Give the upload a unique ID before opening the disk copy; your upload has been kept.', '本地模型与临时上传使用同一 ID。请为上传文件更换唯一 ID 后再打开磁盘版本；已保留当前上传内容。'));
+      return;
+    }
+    datasetRequest.current?.abort(); setLoadingDataset(false); setSelectedId(id); setError('');
+    let incoming = refresh ? undefined : datasets.find(item => item.id === id);
+    if (!incoming && id && treeLibrary.some(item => item.id === id)) {
+      const controller = new AbortController(); datasetRequest.current = controller; setLoadingDataset(true);
+      try {
+        const response = await fetch(`/api/local-datasets?treeId=${encodeURIComponent(id)}`, { signal: controller.signal });
+        if (!response.ok) throw new Error('Could not load this local tree dataset.');
+        const data = await response.json() as { treeDatasets: unknown[]; errors: string[] };
+        if (controller.signal.aborted) return;
+        incoming = data.treeDatasets.map(validateTreeDataset).find(item => item.id === id);
+        if (!incoming) throw new Error(data.errors.join(' ') || 'Local dataset was not found.');
+        const loaded = incoming;
+        // Retain uploaded data, but only one potentially large local tree part.
+        setDatasets(current => [...current.filter(item => uploadedIds.current.has(item.id) || !treeLibrary.some(local => local.id === item.id)), loaded]);
+      } catch (error) {
+        if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'Local dataset load failed');
+        return;
+      } finally { if (!controller.signal.aborted) setLoadingDataset(false); }
+    }
+    if (incoming) { setGame(incoming.game); setHistory(incoming.nodes[0].history); setPreset(''); setUnequal(Boolean(incoming.game.stacksBb)); }
   }
   async function importFile(file: File | undefined) {
     if (!file) return;
+    cancelDatasetLoad();
+    const controller = new AbortController(); datasetRequest.current = controller;
     try {
       if (file.size > 20 * 1024 * 1024) throw new Error('Use a file smaller than 20 MB.');
       const incoming = validateTreeDataset(JSON.parse(await file.text()));
+      if (controller.signal.aborted) return;
+      if (treeLibrary.some(item => item.id === incoming.id)) throw new Error(t('This ID already belongs to a local model. Give the uploaded dataset a unique ID.', '此 ID 已被本地模型使用，请为上传数据设置唯一 ID。'));
+      uploadedIds.current.add(incoming.id);
       setDatasets(current => [...current.filter(item => item.id !== incoming.id), incoming]);
-      setSelectedId(incoming.id); setGame(incoming.game); setHistory(incoming.nodes[0].history); setUnequal(Boolean(incoming.game.stacksBb));
+      setSelectedId(incoming.id); setGame(incoming.game); setHistory(incoming.nodes[0].history); setPreset(''); setUnequal(Boolean(incoming.game.stacksBb));
       setMessage(t(`Loaded ${incoming.nodes.length} decisions. This upload lasts until refresh.`, `已载入 ${incoming.nodes.length} 个决策节点。本次上传在刷新后清空。`)); setError('');
-    } catch (error) { setError(error instanceof Error ? error.message : 'Invalid strategy file'); }
+    } catch (error) { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'Invalid strategy file'); }
     if (fileInput.current) fileInput.current.value = '';
   }
 
   return <div className="tree-workspace">
     <div className="tree-intro"><GitBranch size={21}/><div><strong>{t('Build the full preflop action history', '构建完整翻前行动历史')}</strong><p>{t('6–9 players · Cash · 100 BB first. Record real actions; strategy requires matching source data.', '6–9 人 · Cash · 优先 100 BB。记录实际行动，策略必须来自匹配条件的数据。')}</p></div><span>{t('RULES ≠ STRATEGY', '规则支持 ≠ 策略覆盖')}</span></div>
+    <div className="tree-dataset-picker panel"><label>{t('Active dataset', '当前数据集')}<select value={selectedId} onChange={event => void selectDataset(event.target.value)}><option value="">{t('Select a source dataset', '选择来源数据集')}</option>{[...localPacks, ...datasets.filter(item => uploadedIds.current.has(item.id) || !treeLibrary.some(local => local.id === item.id))].map(item => <option key={item.id} value={item.id}>{item.name.replace(/ · part \d+\/\d+$/, "")}</option>)}</select></label>{loadingDataset && <p role="status" className="tree-muted">{t("Loading selected dataset…", "正在载入所选数据…")}</p>}</div>
     <div className="tree-layout">
       <section className="panel tree-builder">
-        <div className="panel-heading"><h2>{t('Table & action history', '牌桌与行动历史')}</h2><button className="icon-button" aria-label="Reset action history" onClick={() => { setHistory([]); setError(''); }}><RotateCcw size={16}/></button></div>
+        <div className="panel-heading"><h2>{t('Table & action history', '牌桌与行动历史')}</h2><button className="icon-button" aria-label="Reset action history" onClick={() => { cancelDatasetLoad(); setPreset(''); setHistory([]); setError(''); }}><RotateCcw size={16}/></button></div>
         <div className="tree-setup">
           <div className="two-fields"><label>{t('Players', '人数')}<select value={game.players} onChange={event => changeGame({ players: Number(event.target.value), stacksBb: undefined })}>{[6,7,8,9].map(count => <option key={count} value={count}>{count}-max</option>)}</select></label><label>{t('Starting stack (BB)', '起始后手（BB）')}<input type="number" min="1" step="1" value={game.stackBb} onChange={event => changeGame({ stackBb: Number(event.target.value), stacksBb: undefined })}/></label></div>
           <details className="tree-assumptions"><summary>{t('Rake, ante & individual stacks', '抽水、前注与各座位后手')}</summary><label>Rake profile<input value={game.rake} onChange={event => changeGame({ rake: event.target.value })}/></label><label>Ante (BB / player)<input type="number" min="0" step="0.1" value={game.anteBb} onChange={event => changeGame({ anteBb: Number(event.target.value) })}/></label><label className="tree-checkbox"><input type="checkbox" checked={unequal} onChange={event => { setUnequal(event.target.checked); changeGame({ stacksBb: undefined }); }}/>{t('Individual starting stacks', '分别设置起始后手')}</label>{unequal && <div className="tree-seat-inputs">{positions.map(position => <label key={position}>{position}<input aria-label={`${position} starting stack`} type="number" min="1" value={game.stacksBb?.[position] ?? game.stackBb} onChange={event => changeGame({ stacksBb: { ...game.stacksBb, [position]: Number(event.target.value) } })}/></label>)}</div>}<p>{t('Changing table conditions starts a new history. Standard 0.5 / 1 BB blinds; no straddle or BB ante.', '修改牌局条件会重置行动历史。使用 0.5／1 BB 盲注，暂不支持 Straddle 或 BB Ante。')}</p></details>
@@ -103,13 +187,13 @@ export default function TreeWorkspace({ t, onReference }: { t: Translate; onRefe
             const seat = state?.seats.find(seat => seat.position === position);
             return <div key={position} className={`${state?.nextActor === position ? 'acting' : ''} ${seat?.folded ? 'folded' : ''}`}><strong>{position}</strong><span>{seat?.folded ? 'Fold' : seat?.allIn ? 'All-in' : `${seat?.remainingBb ?? game.stackBb} BB`}</span></div>;
           })}</div>
-          <label>{t('Example action lines', '示例行动线')}<select value={preset} onChange={event => usePreset(event.target.value as LinePreset)}>{LINE_PRESETS.map(item => <option key={item.id} value={item.id}>{t(item.en, item.zh)}</option>)}</select></label><p className="tree-muted">{t('Examples contain actions only, not recommended play.', '示例仅用于构建场景，不代表推荐打法。')}</p>
+          <label>{t('Example action lines', '示例行动线')}<select value={preset} onChange={event => usePreset(event.target.value as LinePreset)}><option value="" disabled>{t("Custom action history", "自定义行动历史")}</option>{LINE_PRESETS.map(item => { const reason = getPresetError(game, item.id, presetSizes); return <option key={item.id} value={item.id} disabled={Boolean(reason)} title={reason ?? undefined}>{t(item.en, item.zh)}{reason ? t(' · Unavailable', ' · 不可用') : ''}</option>; })}</select></label><p className="tree-muted">{presetSizes ? t('Examples use this model’s declared raise sizes and limits. Actions are examples, not recommended play; coverage still requires a matching node. Select no dataset to explore other legal histories.', '示例使用当前模型声明的加注尺寸与限制，仅构建行动，不代表推荐打法；仍须匹配已有节点。取消选择数据集可探索其他合法历史。') : t('Examples contain actions only, not recommended play.', '示例仅用于构建场景，不代表推荐打法。')}</p>{presetError && <p className="input-error" role="alert">{presetError}</p>}
         </div>
-        <div className="tree-history"><div><h3>{t('Actions in order', '按顺序记录行动')}</h3><button className="text-button" disabled={!history.length} onClick={() => { setHistory(history.slice(0, -1)); setError(''); }}><Undo2 size={13}/>{t('Undo', '撤销')}</button></div>{history.length ? <ol>{history.map((item, index) => <li key={index}><span>{index + 1}</span><strong>{item.actor}</strong><em>{choiceLabel(item)}</em></li>)}</ol> : <p className="tree-muted">{t('Blinds posted. The first player acts next.', '盲注已投入，由第一个位置开始行动。')}</p>}</div>
+        <div className="tree-history"><div><h3>{t('Actions in order', '按顺序记录行动')}</h3><button className="text-button" disabled={!history.length} onClick={() => { cancelDatasetLoad(); setPreset(''); setHistory(history.slice(0, -1)); setError(''); }}><Undo2 size={13}/>{t('Undo', '撤销')}</button></div>{history.length ? <ol>{history.map((item, index) => <li key={index}><span>{index + 1}</span><strong>{item.actor}</strong><em>{choiceLabel(item)}</em></li>)}</ol> : <p className="tree-muted">{t('Blinds posted. The first player acts next.', '盲注已投入，由第一个位置开始行动。')}</p>}</div>
         <div className="tree-actions" aria-live="polite"><h3>{state?.nextActor ? `${state.nextActor} ${t('to act', '行动')}` : state ? t('Preflop complete', '翻前结束') : t('Check table settings', '请检查牌局设置')}</h3><div className="tree-pot"><span>{t('Pot', '底池')} <b>{state?.potBb ?? '—'} BB</b></span><span>{t('To call', '需跟注')} <b>{state?.legal.callAmountBb ?? '—'} BB</b></span></div>{state?.nextActor && <><div className="tree-action-buttons"><button disabled={!state.legal.fold} onClick={() => append('fold')}>Fold</button><button disabled={!state.legal.check} onClick={() => append('check')}>Check</button><button disabled={!state.legal.call} onClick={() => append('call')}>{state.legal.call && state.legal.callAmountBb === nextSeat?.remainingBb ? 'Call All-in' : 'Call'}</button></div><div className="tree-raise"><label>{t('Raise to (total BB)', 'Raise 至（累计 BB）')}<input aria-label="Raise to total BB" type="number" min={state.legal.minRaiseToBb} max={state.legal.maxRaiseToBb} step="0.1" value={raiseTo} onChange={event => setRaiseTo(event.target.value)}/></label><button className="primary-button" disabled={!state.legal.raise} onClick={() => append('raise', Number(raiseTo))}>Raise</button></div><div className="tree-sizing-buttons"><button disabled={!state.legal.raise} onClick={() => setRaiseTo(String(state!.legal.minRaiseToBb))}>{t('Minimum', '最小加注')} {state.legal.minRaiseToBb}</button><button disabled={!state.legal.raise} onClick={() => append('raise', state!.legal.maxRaiseToBb)}>All-in {state.legal.maxRaiseToBb} BB</button></div>{!state.legal.raise && <p className="tree-muted">{t('No legal Raise: check the remaining stacks and whether betting reopened.', '当前不能 Raise：需满足剩余后手及重新开放加注的规则。')}</p>}</>}{state?.terminal && <p className="tree-muted">{state.terminal === 'uncontested' ? t('Only one player remains. The unmatched bet is returned.', '只剩一位玩家，未被跟注的筹码退回。') : state.terminal === 'all-in' ? t('All-in action is settled. No further preflop decision.', '全下行动已完成，没有更多翻前决策。') : t('The betting round is complete. Continue on the flop.', '本轮下注结束，进入翻牌。')}</p>}</div>
       </section>
 
-      <section className="panel tree-range"><div className="panel-heading"><h2>{t('Strategy for this exact history', '完整历史对应的策略')}</h2><span className="matrix-count">169</span></div><div className="range-context"><div><h3>{state?.nextActor ?? (state ? t('Preflop complete', '翻前结束') : t('Check table settings', '请检查牌局设置'))}</h3><span>{game.players}-max · Cash · {stackLabel}</span></div><span className={`status-pill ${node ? '' : 'unavailable'}`}>{node ? dataset?.source.kind === 'demo' ? 'DEMO' : 'IMPORTED' : 'NO DATA'}</span></div>
+      <section className="panel tree-range">{dataset && <ComputationNotice source={dataset.source} t={t}/>}<div className="panel-heading"><h2>{t('Strategy for this exact history', '完整历史对应的策略')}</h2><span className="matrix-count">169</span></div><div className="range-context"><div><h3>{state?.nextActor ?? (state ? t('Preflop complete', '翻前结束') : t('Check table settings', '请检查牌局设置'))}</h3><span>{game.players}-max · Cash · {stackLabel}</span></div><span className={`status-pill ${node ? '' : 'unavailable'}`}>{node ? dataset?.source.kind === 'computed' ? 'COMPUTED · APPROXIMATE' : dataset?.source.kind === 'demo' ? 'DEMO' : 'IMPORTED' : 'NO DATA'}</span></div>
         <div className="matrix-wrapper"><div className="hand-matrix" aria-label="Full history strategy matrix">{HANDS.map(cell => {
           const row = node?.hands[cell]; let background = 'repeating-linear-gradient(135deg,#f6f7f4 0px,#f6f7f4 5px,#e2e7dc 5px,#e2e7dc 6px)';
           if (row?.status === 'available') { let offset = 0; const stops = node!.actions.map((action, index) => { const start = offset; offset += row.frequencies[action.id] * 100; return `${actionColor(action, index)} ${start}% ${offset}%`; }); background = `linear-gradient(90deg, ${stops.join(',')})`; }
@@ -121,11 +205,13 @@ export default function TreeWorkspace({ t, onReference }: { t: Translate; onRefe
       </section>
 
       <aside className="panel tree-data"><div className="panel-heading"><h2>{t('Hand & data', '手牌与数据')}</h2><Database size={17}/></div><div className="tree-hand"><label>{t('Your hand', '你的手牌')}<input aria-label="Action builder hand" value={query} onChange={event => setQuery(event.target.value)} placeholder="AKs, QQ, As Kh"/></label><strong className="tree-hand-title">{hand ?? '—'}</strong>{!hand && <p className="input-error">{t('Enter AKs, AKo, QQ, or two different cards.', '请输入 AKs、AKo、QQ，或两张不重复的牌。')}</p>}{handData?.status === 'available' && node ? <><div className="tree-hand-frequencies">{node.actions.map((action, index) => <div key={action.id}><span style={{ borderLeftColor: actionColor(action, index) }}>{choiceLabel(action)}</span><strong>{frequency(handData.frequencies[action.id])}</strong></div>)}</div><p className="tree-muted">Reach: {frequency(handData.reach)} · {t('conditional frequencies', '节点内条件频率')}</p></> : <p className="tree-muted">{handData?.status === 'unreachable' ? t('This hand cannot reach the selected node under the imported strategy.', '按导入策略，该手牌无法到达当前节点。') : t('No sourced frequencies for this hand and history.', '当前手牌及行动历史没有可用的来源频率。')}</p>}</div>
-        <div className="tree-library"><h3>{t('Action-history datasets', '完整历史数据集')}</h3><label>{t('Active dataset', '当前数据集')}<select value={selectedId} onChange={event => selectDataset(event.target.value)}><option value="">{t('Select a source dataset', '选择来源数据集')}</option>{datasets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{dataset && <><label>{t('Available decision nodes', '已有决策节点')}<select value={node?.id ?? ''} onChange={event => { const chosen = dataset.nodes.find(node => node.id === event.target.value); if (chosen) { setGame(dataset.game); setHistory(chosen.history); setUnequal(Boolean(dataset.game.stacksBb)); setError(''); } }}><option value="">{t('Choose a decision', '选择决策节点')}</option>{dataset.nodes.map(node => <option key={node.id} value={node.id}>{node.id} · {node.history.length} actions</option>)}</select></label><p className="tree-muted">{dataset.source.precision}</p><p className="tree-muted">{dataset.source.license}</p><a href={dataset.source.url} target="_blank" rel="noreferrer">{t('Original source', '原始来源')}<ArrowUpRight size={13}/></a><p className="tree-muted">{t('Imported metadata is not independent verification.', '导入声明不等于独立验证。')}</p></>}
+        <div className="tree-library"><h3>{t('Action-history datasets', '完整历史数据集')}</h3>{dataset && <>{packNodeCount > 0 && <p className="tree-muted">{packNodeCount.toLocaleString()} {t('decisions in this model. Record actions to look up any matching history.', '个模型决策节点；记录行动即可查询匹配的完整历史。')}</p>}<label>{t('Available decision nodes', '已有决策节点')}<select value={node?.id ?? ''} onChange={event => { const chosen = dataset.nodes.find(node => node.id === event.target.value); if (chosen) { cancelDatasetLoad(); setPreset(''); setGame(dataset.game); setHistory(chosen.history); setUnequal(Boolean(dataset.game.stacksBb)); setError(''); } }}><option value="">{t('Choose a decision', '选择决策节点')}</option>{node && !dataset.nodes.some(item => item.id === node.id) && <option value={node.id}>{node.id} · {t('found in another part', '已从其他分片匹配')}</option>}{dataset.nodes.map(node => <option key={node.id} value={node.id}>{node.id} · {node.history.length} actions</option>)}</select></label><p className="tree-muted">{dataset.source.precision}</p><p className="tree-muted">{dataset.source.license}</p><a href={dataset.source.url} target="_blank" rel="noreferrer">{t('Original source', '原始来源')}<ArrowUpRight size={13}/></a><p className="tree-muted">{t('Imported metadata is not independent verification.', '导入声明不等于独立验证。')}</p></>}
           <button className="primary-button" onClick={() => fileInput.current?.click()}><Upload size={15}/>{t('Import tree JSON', '导入行动树 JSON')}</button><input ref={fileInput} type="file" accept=".json,application/json" hidden onChange={event => void importFile(event.target.files?.[0])}/><button className="text-button" disabled={!state?.nextActor} onClick={() => { try { saveJson(createTreeTemplate(game, history), 'gto-action-tree-template.json'); } catch (error) { setError(error instanceof Error ? error.message : 'Cannot export this decision'); } }}><ArrowDownToLine size={14}/>{t('Empty template for this decision', '下载当前节点的空白模板')}</button><p className="tree-muted">{t('No synthetic frequencies included. For reuse after refresh, save validated tree JSON in data/private.', '模板不附带虚构频率。如需刷新后复用，将行动树 JSON 放入 data/private。')}</p><p className="tree-muted">{t('Legacy range files remain available under Quick lookup.', '旧版范围文件继续在 Quick lookup 中使用。')}</p>
         </div>
       </aside>
     </div>
+    {locatingNode && <p className="tree-message" role="status">{t('Looking up this history across the computed dataset…', '正在本机计算数据中查找完整行动历史…')}</p>}
+    {state?.nextActor && <LocalCalculation key={JSON.stringify([game, history])} t={t} context={JSON.stringify({ game, history })} opponents={state.seats.filter(seat => !seat.folded).length - 1} hand={query}/>}
     {(stateError || error) && <p className="tree-error" role="alert">{stateError || error}</p>}
     {message && <p className="tree-message" role="status">{message}</p>}
     {loadErrors.length > 0 && <details className="tree-load-errors"><summary>{t('Local data loading issues', '本地数据载入问题')}</summary>{loadErrors.map((error, index) => <p key={index}>{error}</p>)}</details>}

@@ -1,14 +1,17 @@
 # GTO Reminder
 
-**v0.2 正在建设 6–9 人完整翻前工作台，尚未完成全部精确 GTO 数据覆盖。** 已接入本地专业出版图的简化 Open 和 Facing Open 频率，并增加完整行动历史和 v2 策略格式。出版图、用户导入和合成演示始终区分；缺失数据不补成建议。
+**正在建设 6–9 人翻前工作台，尚未完成全部精确 GTO 数据覆盖。** 2026-10-13 已接入 325 个参考场景、27,914 个本机计算决策和 212 个快捷节点。出版图、位置映射、计算模型、未收敛研究结果和演示分别标识。
+
+新增 **Data coverage / 数据覆盖**：按人数查看参考场景、未知手牌和计算模型，可直接进入参考范围或完整历史，刷新并导出不含策略频率的清单。新补 9 人最多三次加注研究包，含 284 个决策、全部 36 组面对 4-Bet 的位置组合，仍未确认收敛；它排除了 5-Bet，面对 4-Bet 只有 Fold/Call。求解工具现支持重启后核验存档并追加计算，见[存档恢复说明](docs/LOCAL_SOLVER.md)。
 
 ## v0.2 三种工作方式
 
-- **Published ranges**：可查询 64 张出版范围图（13 张 Open、51 张 Facing Open，共 10,816 格）。6 人局 20 张、9 人局 44 张，按双方位置查询 Raise / 3-Bet、Call、Fold，保持原稿 0/50/100% 精度；6 人 SB Open 支持 Limp。每张图保留原稿尺寸，可直接对照 PDF；9 人 BB vs UTG+2 原图未标 3-Bet 尺寸，页面明确提示。数据只在本地保存，7/8 人数值图仍缺失，不跨人数复用。见[转录说明](docs/REFERENCE_TRANSCRIPTION.md)。
-- **Action history**：6–9 人按顺序记录 Fold / Check / Call / 多尺寸 Raise，覆盖 Limp、Cold Call、Squeeze、All-in 等行动流程；支持不同座位后手。频率只在完整历史和条件命中 v2 数据时显示。见[v2 格式](docs/DATA_FORMAT_V2.md)。
-- **Quick lookup**：保留 v1 快捷矩阵、4 个合成演示节点及 v1 导入。
+- **Reference ranges**：保留 6／9 人的 64 张简化 Open／Facing Open 图；新增 8 人 119 张图，覆盖 Open、面对 Open／3／4／5-Bet、BB 对 SB Limp。8 人色条按图片测量，约 ±2 个百分点；未显示的手牌保留未知。7 人 91 张为从 8 人移除最早座位的投影估算，明确标记 `ESTIMATED`，没有重新求解。6／9 人 Facing 3-Bet 的保守转录只显示可核验手牌。见[8 人转录](docs/POKERCOACHING_TRANSCRIPTION.md)。
+- **Action history**：支持完整行动记录和 v2 导入。6–9 人 100 BB 基础计算树无 Limp，最多到 3-Bet；另有 6 人含 Limp、7 人无 Limp 的四次加注研究包，覆盖标准单一对手的面对 4/5-Bet 场景，但尚未收敛，名称及面板均明确标记。示例使用所选模型的实际下注尺寸，查询按需跨分片加载。所有模型均使用近似后续价值。见[本机求解说明](docs/LOCAL_SOLVER.md)及[v2 格式](docs/DATA_FORMAT_V2.md)。
+- **Quick lookup**：保留演示与 v1 导入，可选择本机计算的 RFI／Facing Open 数据包；缺少 v1 场景时，可查询同一计算快照的 v2 完整历史，保留到达权重、不可达和缺失状态。计算覆盖单独计数，不计入正式导入来源。
+- **本机胜率模拟**：三个模块均可展开，给定对手模型计算单手或全部 169 类的摊牌胜率，显示样本数、采样区间、进度并支持停止、导出。这不是行动混频或 GTO 求解，不会覆盖来源频率。
 
-完整行动规则支持不等于全部节点已有解；7 人完整公开包和多数非 RFI 原始频率仍待获取。
+完整行动规则支持不等于全部节点已有解；任意后手、尺寸、Limp、多路及深层加注的完整策略仍未补齐。界面提供标准参考场景覆盖表，不将推算数量当成真实 GTO 覆盖率。
 
 本轮新增数据的复现方式见 [Facing Open 转录](docs/RESPONSE_TRANSCRIPTION.md)，后续 3-Bet 图的手牌缺失与到达率边界见[数据缺口](docs/RESPONSE_DATA_GAPS.md)。
 
@@ -34,7 +37,7 @@ GTO Reminder 希望把成熟的德州扑克策略数据整理成易用的网页�
 Windows 当前工作区可以直接在 PowerShell 中运行：
 
 ```powershell
-cd D:\000_Workspace\Texasholdem_gto_reminder
+# 在克隆后的仓库根目录执行，无需固定盘符或目录名
 powershell -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
@@ -43,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 建议使用 Node.js 20.19+ 或 22.12+，并使用 npm 安装。仓库使用 `package-lock.json` 锁定依赖版本。
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -71,6 +74,33 @@ npm run preview
 可从数据面板的 `Covered spots` 直接切换已覆盖场景。页面支持选择其他人数和后手，不代表内置数据已经覆盖它们。
 
 ## 导入自己的范围
+
+### 换电脑恢复本地数据
+
+Git 同步代码、来源索引和生成脚本，`data/private/` 中的 PDF、转录频率与本机计算结果不会上传。
+
+```powershell
+# Python 需有 pypdf、Pillow、numpy；也可用 -Python 指定现有解释器
+powershell -ExecutionPolicy Bypass -File scripts/restore-reference-data.ps1
+```
+
+此命令核验原 PDF 指纹并重建参考图。7 人投影由应用根据 8 人转录生成。近似求解数据按[本机求解说明](docs/LOCAL_SOLVER.md)另外计算。进入项目先 `git pull --ff-only`、`npm ci`，结束工作再提交和推送代码。
+
+已有完整本地数据时，可使用只依赖 Python 标准库的迁移工具：
+
+```powershell
+# 在源电脑等待计算和数据导出结束后执行
+python scripts/pack-local-data.py
+# 输出 data/private/exports/日期时间-bundle.zip 的实际路径
+# 将下列路径替换为生成的包；复制至目标电脑后再次校验
+python scripts/pack-local-data.py --verify "D:/transfer/实际文件名-bundle.zip"
+```
+
+包仅包含当前 `computed-*.tree.json` / `*.quick.json`、五份参考转录 JSON、三份已知原 PDF 及 `solver-audits/` 顶层 JSON。清单记录每项相对路径、SHA-256 和字节数，保存在包内 `data/private/exports/bundle-manifest.json`。工具核对所有条目与清单、必需参考文件、哈希和大小，并在打包期间拒绝变化的源文件；`--verify` 只读取，不自动解压或覆盖。它不收集 `.runtime/`、引擎依赖、完整求解存档、日志或其他私人文件，也不上传数据。
+
+数据包仅用于本人设备间复制，不上传或公开。在目标电脑克隆或更新源码、校验数据包后，建议将 ZIP **手动解压到没有同名数据的新 clone 项目根目录**，使其中的 `data/private/...` 落入项目的 `data/private/`。如果目标已有数据，先备份原 `data/private/`，再手动核对和合并需要的版本。源码继续通过 Git 同步，数据包与恢复的数据继续被 Git 忽略。重新启动本地服务或刷新页面后加载数据。包校验确认传输完整性，不替代来源许可或策略质量核验。
+
+### 手动导入
 
 1. 打开数据面板，使用 `Download template` 获取完整格式示例。
 2. 按[数据格式说明](docs/DATA_FORMAT.md)填入获授权的数据、完整场景条件和来源信息。下载模板仍是演示数据，不能只修改名称就当作 solver 输出。

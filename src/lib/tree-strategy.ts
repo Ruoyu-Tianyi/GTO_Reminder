@@ -1,4 +1,4 @@
-import { HANDS, comboCount, getPositions, type Dataset, type Position } from './poker';
+import { HANDS, comboCount, getPositions, validateComputation, type Dataset, type Position } from './poker';
 import { replayPreflop, type PreflopAction, type PreflopConfig } from './preflop';
 
 export type TreeGame = PreflopConfig & { format: 'cash'; rake: string };
@@ -65,7 +65,8 @@ export function validateTreeDataset(value: unknown): TreeDataset {
   try { if (!['http:', 'https:'].includes(new URL(url).protocol)) throw new Error(); } catch { throw new Error('source.url must be an http or https URL.'); }
   const retrievedAt = text(source.retrievedAt, 'source.retrievedAt');
   if (!/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(retrievedAt) || !Number.isFinite(Date.parse(retrievedAt))) throw new Error('source.retrievedAt must be an ISO date.');
-  if (source.kind !== 'demo' && source.kind !== 'imported') throw new Error('source.kind must be demo or imported.');
+  if (source.kind !== 'demo' && source.kind !== 'imported' && source.kind !== 'computed') throw new Error('source.kind must be demo, imported or computed.');
+  const computation = source.kind === 'computed' ? validateComputation(source.computation) : undefined;
   const rawGame = object(raw.game, 'game');
   if (rawGame.format !== 'cash') throw new Error('schema v2 currently supports Cash only.');
   const players = number(rawGame.players, 'game.players', 6, 9);
@@ -133,7 +134,7 @@ export function validateTreeDataset(value: unknown): TreeDataset {
     }));
     return { id: nodeId, history, actions, hands };
   });
-  return { schemaVersion: 2, id, name, game, nodes, source: { name: text(source.name, 'source.name'), url, license: text(source.license, 'source.license'), retrievedAt, kind: source.kind, precision: text(source.precision, 'source.precision') } };
+  return { schemaVersion: 2, id, name, game, nodes, source: { name: text(source.name, 'source.name'), url, license: text(source.license, 'source.license'), retrievedAt, kind: source.kind, precision: text(source.precision, 'source.precision'), ...(computation ? { computation } : {}) } };
 }
 
 export function findTreeNode(dataset: TreeDataset, game: TreeGame, history: readonly PreflopAction[]): TreeNode | undefined {

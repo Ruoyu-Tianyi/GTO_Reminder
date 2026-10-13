@@ -11,3 +11,5 @@ dist/
 test-results/
 playwright-report/
 data/private/
+__pycache__/
+*.pyc

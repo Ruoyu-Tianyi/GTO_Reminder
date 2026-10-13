@@ -3,7 +3,11 @@ import { ArrowDownToLine, ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronRight
 import { DEMO_DATASET } from './data/demo';
 import ReferenceLibrary, { CoveragePanel, ReferenceSummary } from './ReferenceLibrary';
 import TreeWorkspace from './TreeWorkspace';
-import PublishedCharts from './PublishedCharts';
+import PublishedCharts, { type ReferenceSelection } from './PublishedCharts';
+import DataInventory from './DataInventory';
+import LocalCalculation from './LocalCalculation';
+import ComputationNotice from './ComputationNotice';
+import QuickTreeLookup from './QuickTreeLookup';
 import { HANDS, comboCount, findNode, getPositions, getVillains, normalizeHand, rangeSummary, validateDataset, type Dataset, type Position, type Spot, type SpotKind } from './lib/poker';
 
 const INITIAL_SPOT: Spot = { players: 6, hero: 'BTN', villain: null, stackBb: 100, kind: 'rfi', openSizeBb: 2.5, threeBetSizeBb: 10, fourBetSizeBb: 22, format: 'cash', anteBb: 0, rake: '5% · 3 BB cap' };
@@ -26,7 +30,9 @@ function normalizeSpot(spot: Spot): Spot {
 }
 
 export default function App() {
-  const [workspaceMode, setWorkspaceMode] = useState<'history' | 'quick' | 'published'>('published');
+  const [workspaceMode, setWorkspaceMode] = useState<'history' | 'quick' | 'published' | 'inventory'>('published');
+  const [rangeRequest, setRangeRequest] = useState<{ selection: ReferenceSelection; version: number }>();
+  const [treeRequest, setTreeRequest] = useState<{ id: string; version: number }>();
   const [referenceSelection, setReferenceSelection] = useState<{ id: string; page: number } | null>(null);
   const [spot, setSpot] = useState<Spot>(INITIAL_SPOT);
   const [hand, setHand] = useState('AKs');
@@ -49,6 +55,7 @@ export default function App() {
   const frequencies = normalizeHand(query) ? node?.frequencies[hand] : undefined;
   const summary = node ? rangeSummary(node) : null;
   const isDemo = dataset.source.kind === 'demo';
+  const datasetLabel = dataset.source.kind === 'computed' ? 'COMPUTED · APPROXIMATE' : isDemo ? 'DEMO' : 'IMPORTED';
   const positions = getPositions(spot.players);
   const villains = getVillains(spot.players, spot.hero, spot.kind);
   const t = (en: string, zh: string) => language === 'en' ? en : zh;
@@ -63,7 +70,7 @@ export default function App() {
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const controller = new AbortController();
-    fetch('/api/local-datasets', { signal: controller.signal }).then(async response => {
+    fetch('/api/local-datasets?summary=1', { signal: controller.signal }).then(async response => {
       if (!response.ok) throw new Error('The local strategy folder could not be loaded.');
       const result = await response.json() as { datasets: unknown[]; errors: string[] };
       const incoming = result.datasets.map(validateDataset).filter(data => data.id !== DEMO_DATASET.id);
@@ -102,11 +109,13 @@ export default function App() {
 
     <main>
       <div className="page-heading"><div><div className="eyebrow">THE STUDY ROOM <span>/</span> PREFLOP</div><h1>{t('Preflop workspace', '翻前策略工作台')}<span className="version">v0.2</span></h1><p>{t('Set the spot. Explore the range. Understand the frequency.', '选择场景，查看范围，理解每一手牌的行动频率。')}</p></div><button className="secondary-button source-button" onClick={() => setModal('data')}><Database size={16} />{t('Manage data', '管理数据')}<ArrowUpRight size={15} /></button></div>
-      <div className="workspace-tabs" aria-label="Preflop workspace mode"><button className={workspaceMode === 'published' ? 'active' : ''} aria-pressed={workspaceMode === 'published'} onClick={() => setWorkspaceMode('published')}>{t('Published ranges', '出版范围图')}</button><button className={workspaceMode === 'history' ? 'active' : ''} aria-pressed={workspaceMode === 'history'} onClick={() => setWorkspaceMode('history')}>{t('Action history', '完整行动历史')}</button><button className={workspaceMode === 'quick' ? 'active' : ''} aria-pressed={workspaceMode === 'quick'} onClick={() => setWorkspaceMode('quick')}>{t('Quick lookup', '快捷范围查询')}</button><button onClick={() => { setReferenceSelection(null); setModal('references'); }}>{t('Reference PDFs', '专业 PDF')}<ArrowUpRight size={14}/></button></div>
-      <div hidden={workspaceMode !== 'published'}><PublishedCharts t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
-      <div hidden={workspaceMode !== 'history'}><TreeWorkspace t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
+      <div className="workspace-tabs" aria-label="Preflop workspace mode"><button className={workspaceMode === 'published' ? 'active' : ''} aria-pressed={workspaceMode === 'published'} onClick={() => setWorkspaceMode('published')}>{t('Reference ranges', '参考范围图')}</button><button className={workspaceMode === 'history' ? 'active' : ''} aria-pressed={workspaceMode === 'history'} onClick={() => setWorkspaceMode('history')}>{t('Action history', '完整行动历史')}</button><button className={workspaceMode === 'quick' ? 'active' : ''} aria-pressed={workspaceMode === 'quick'} onClick={() => setWorkspaceMode('quick')}>{t('Quick lookup', '快捷范围查询')}</button><button className={workspaceMode === 'inventory' ? 'active' : ''} aria-pressed={workspaceMode === 'inventory'} onClick={() => setWorkspaceMode('inventory')}>{t('Data coverage', '数据覆盖')}</button><button onClick={() => { setReferenceSelection(null); setModal('references'); }}>{t('Reference PDFs', '专业 PDF')}<ArrowUpRight size={14}/></button></div>
+      <div hidden={workspaceMode !== 'published'}><PublishedCharts key={rangeRequest?.version ?? 0} initialSelection={rangeRequest?.selection} t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
+      <div hidden={workspaceMode !== 'history'}><TreeWorkspace openRequest={treeRequest} t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
+      {workspaceMode === 'inventory' && <DataInventory t={t} onReference={selection => { setRangeRequest(current => ({ selection, version: (current?.version ?? 0) + 1 })); setWorkspaceMode('published'); }} onTree={id => { setTreeRequest(current => ({ id, version: (current?.version ?? 0) + 1 })); setWorkspaceMode('history'); }}/>}
       <div hidden={workspaceMode !== 'quick'}>
-      <div className={`data-notice ${isDemo ? 'demo-notice' : 'import-notice'}`}><Info size={17} /><span><strong>{isDemo ? t('Interactive demo', '交互演示') : t('Imported dataset', '已导入数据')}</strong><span className="notice-divider">·</span>{isDemo ? t('Synthetic frequencies for exploring the interface. Not a solved GTO strategy.', '当前频率仅用于界面演示，并非求解器计算的 GTO 策略。') : t('Source and accuracy are declared by the file owner, not independently verified.', '来源与准确性由文件提供者声明，尚未经独立验证。')}</span><button onClick={() => setModal('data')}>{t('View source', '查看来源')}<ChevronRight size={14} /></button></div>
+      <ComputationNotice source={dataset.source} t={t}/>
+      <div className={`data-notice ${isDemo ? 'demo-notice' : 'import-notice'}`}><Info size={17} /><span><strong>{isDemo ? t('Interactive demo', '交互演示') : dataset.source.kind === 'computed' ? t('Computed approximation', '本机近似计算') : t('Imported dataset', '已导入数据')}</strong><span className="notice-divider">·</span>{isDemo ? t('Synthetic frequencies for exploring the interface. Not a solved GTO strategy.', '当前频率仅用于界面演示，并非求解器计算的 GTO 策略。') : t('Source and accuracy are declared by the file owner, not independently verified.', '来源与准确性由文件提供者声明，尚未经独立验证。')}</span><button onClick={() => setModal('data')}>{t('View source', '查看来源')}<ChevronRight size={14} /></button></div>
 
       <ReferenceSummary onOpen={() => { setReferenceSelection(null); setModal('references'); }} t={t}/>
       <div className="workspace">
@@ -132,9 +141,10 @@ export default function App() {
           </div>
         </section>
 
+        {dataset.source.kind === 'computed' && !node ? <QuickTreeLookup dataset={dataset} spot={spot} query={query} onQueryChange={value => { setQuery(value); const normalized = normalizeHand(value); if (normalized) setHand(normalized); }} enabled={workspaceMode === 'quick'} t={t}/> : <>
         <section className="range-panel panel" aria-labelledby="range-title">
           <div className="panel-heading"><h2 id="range-title"><span className="step-number">02</span>{t('Range explorer', '范围矩阵')}</h2><span className="matrix-count">13 × 13</span></div>
-          <div className="range-context"><div><h3>{spotTitle(spot)}</h3><span>{spot.players}-max <b>·</b> {spot.stackBb} BB <b>·</b> {spot.format === 'cash' ? 'Cash' : 'MTT'} <b>·</b> {t('Preflop', '翻前')}</span></div><span className={`status-pill ${node ? '' : 'unavailable'}`}><span/>{node ? (isDemo ? 'DEMO' : 'IMPORTED') : 'NO DATA'}</span></div>
+          <div className="range-context"><div><h3>{spotTitle(spot)}</h3><span>{spot.players}-max <b>·</b> {spot.stackBb} BB <b>·</b> {spot.format === 'cash' ? 'Cash' : 'MTT'} <b>·</b> {t('Preflop', '翻前')}</span></div><span className={`status-pill ${node ? '' : 'unavailable'}`}><span/>{node ? datasetLabel : 'NO DATA'}</span></div>
           <div className="range-legend" aria-label="Filter actions">{(['all', ...visibleActions] as const).map(key => <button key={key} className={filter === key ? 'active' : ''} onClick={() => setFilter(key)} aria-pressed={filter === key}>{key !== 'all' && <span style={{background:COLORS[key]}}/>}{key === 'all' ? t('All actions', '全部行动') : key === 'raise' ? raiseLabel : key === 'call' ? callLabel : 'Fold'}</button>)}</div>
           <div className="matrix-wrapper"><div className="hand-matrix" role="group" aria-label="Starting hand range matrix">{HANDS.map(cell => {
             const f = node?.frequencies[cell];
@@ -149,11 +159,13 @@ export default function App() {
         <aside className="hand-panel panel" aria-labelledby="hand-title"><div className="panel-heading"><h2 id="hand-title"><span className="step-number">03</span>{t('Your hand', '查看手牌')}</h2><Layers3 size={17}/></div>
           <div className="hand-search"><label htmlFor="hand-input">{t('Find a starting hand', '输入起手牌')}</label><div className="search-input"><input id="hand-input" value={query} placeholder="e.g. AKs, QQ, As Kh" spellCheck={false} onChange={e => { setQuery(e.target.value); const normalized = normalizeHand(e.target.value); if (normalized) setHand(normalized); }}/><span>↵</span></div>{query && !normalizeHand(query) && <p className="input-error">{t('Use AKs, AKo, QQ, or two cards like As Kh.', '格式：AKs、AKo、QQ，或 As Kh 等两张具体牌。')}</p>}</div>
           <div className="selected-hand-display"><div className="playing-cards"><div className="playing-card"><span>{hand[0]}</span><i>♠</i><b>♠</b></div><div className={`playing-card second ${hand[2] === 's' ? '' : 'red-suit'}`}><span>{hand[1]}</span><i>{hand[2] === 's' ? '♠' : '♥'}</i><b>{hand[2] === 's' ? '♠' : '♥'}</b></div></div><h3>{hand}<span>{hand.length === 2 ? t('Pocket pair', '口袋对子') : hand[2] === 's' ? t('Suited', '同花') : t('Offsuit', '非同花')}</span></h3><p>{comboCount(hand)} {t('combinations', '种组合')}<span>·</span>{spot.hero}</p></div>
-          <div className="frequency-section"><div className="frequency-title">{t('Action frequencies', '行动频率')}<span>{isDemo ? 'DEMO' : 'IMPORTED'}</span></div>{visibleActions.map(action => <div key={action} className={`frequency-row ${action}`}><div><span className="action-marker" style={{background:COLORS[action]}}/><span>{action === 'raise' ? raiseLabel : action === 'call' ? callLabel : 'Fold'}</span><strong>{frequencies ? percent(frequencies[action]) : '—'}</strong></div><div className="frequency-track"><span style={{width:`${(frequencies?.[action] ?? 0)*100}%`,background: action === 'fold' ? '#b5bfb0' : COLORS[action]}}/></div></div>)}<p className="frequency-note">{node ? t('Frequencies apply only to the exact spot selected.', '频率仅适用于当前完整场景。') : t('No recommendation without matching data.', '没有匹配数据时，不给出行动建议。')}</p></div>
+          <div className="frequency-section"><div className="frequency-title">{t('Action frequencies', '行动频率')}<span>{datasetLabel}</span></div>{visibleActions.map(action => <div key={action} className={`frequency-row ${action}`}><div><span className="action-marker" style={{background:COLORS[action]}}/><span>{action === 'raise' ? raiseLabel : action === 'call' ? callLabel : 'Fold'}</span><strong>{frequencies ? percent(frequencies[action]) : '—'}</strong></div><div className="frequency-track"><span style={{width:`${(frequencies?.[action] ?? 0)*100}%`,background: action === 'fold' ? '#b5bfb0' : COLORS[action]}}/></div></div>)}<p className="frequency-note">{node ? t('Frequencies apply only to the exact spot selected.', '频率仅适用于当前完整场景。') : t('No recommendation without matching data.', '没有匹配数据时，不给出行动建议。')}</p></div>
           <div className="spot-recap"><h4>{t('At a glance', '当前场景')}</h4><dl><div><dt>{t('Position', '位置')}</dt><dd>{spot.hero}{spot.villain ? ` vs ${spot.villain}` : ''}</dd></div><div><dt>{t('Stack', '后手')}</dt><dd>{spot.stackBb} BB</dd></div><div><dt>Open size</dt><dd>{spot.openSizeBb} BB</dd></div><div><dt>Rake</dt><dd>{spot.rake || '—'}</dd></div></dl></div>
           <button className="learn-link" onClick={() => setModal('guide')}><BookOpen size={15}/>{t('How to read the range', '如何阅读范围矩阵')}<ArrowUpRight size={14}/></button>
         </aside>
+        </>}
       </div>
+      <LocalCalculation key={JSON.stringify(spot)} t={t} context={JSON.stringify(spot)} opponents={spot.kind === 'rfi' ? positions.length - positions.indexOf(spot.hero) - 1 : 1} hand={query}/>
       </div>
       <footer><span><Spade size={13} fill="currentColor"/>GTO Reminder <span className="footer-slash">/</span> {t('Built for deliberate study.', '专注每一次策略学习。')}</span><span>Preflop first.<span className="footer-slash">/</span>Full-game study, next.</span></footer>
     </main>
@@ -166,7 +178,7 @@ export default function App() {
         <CoveragePanel datasets={datasets} spot={spot} t={t}/>
         {import.meta.env.DEV && <div className="local-data-status"><p>{t(`${localDatasetCount} local datasets loaded from data/private. JSON files saved there are loaded again after refresh.`, `已从 data/private 载入 ${localDatasetCount} 个本地数据集。放入该目录的 JSON 文件会在刷新后重新载入。`)}</p>{localErrors.map((error, index) => <p className="import-error" role="alert" key={index}>{error}</p>)}</div>}
         <label>{t('Active dataset', '当前数据集')}<select value={datasetId} onChange={e => switchDataset(e.target.value)}>{datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-        <div className="source-details"><div><span>{t('Provider', '提供者')}</span><strong>{dataset.source.name}</strong></div><div><span>{t('Data status', '数据状态')}</span><strong>{isDemo ? t('Synthetic demo · not GTO', '合成演示 · 非 GTO') : t('User import · unverified', '用户导入 · 未独立验证')}</strong></div><div><span>{t('License / usage', '许可 / 用途')}</span><strong>{dataset.source.license}</strong></div><div><span>{t('Retrieved', '获取日期')}</span><strong>{dataset.source.retrievedAt}</strong></div>{/^https?:\/\//.test(dataset.source.url) && <a href={dataset.source.url} target="_blank" rel="noreferrer">{t('Original source', '原始来源')}<ArrowUpRight size={14}/></a>}</div>
+        <div className="source-details"><div><span>{t('Provider', '提供者')}</span><strong>{dataset.source.name}</strong></div><div><span>{t('Data status', '数据状态')}</span><strong>{isDemo ? t('Synthetic demo · not GTO', '合成演示 · 非 GTO') : dataset.source.kind === 'computed' ? dataset.source.computation?.status === 'unconverged' ? t('Computed approximation · not converged', '本机近似计算 · 未确认收敛') : t('Computed approximation · restricted model', '本机近似计算 · 受限模型') : t('User import · unverified', '用户导入 · 未独立验证')}</strong></div><div><span>{t('License / usage', '许可 / 用途')}</span><strong>{dataset.source.license}</strong></div><div><span>{t('Retrieved', '获取日期')}</span><strong>{dataset.source.retrievedAt}</strong></div>{/^https?:\/\//.test(dataset.source.url) && <a href={dataset.source.url} target="_blank" rel="noreferrer">{t('Original source', '原始来源')}<ArrowUpRight size={14}/></a>}</div>
         <label>{t('Covered spots', '已覆盖场景')}<select aria-label="Covered spots" value={node?.id ?? ''} onChange={e => { const next = dataset.nodes.find(n => n.id === e.target.value); if (next) {setSpot(next.spot); setFilter('all');} }}>{!node && <option value="">{t('Choose a covered spot', '选择已覆盖的场景')}</option>}{dataset.nodes.map(n => <option key={n.id} value={n.id}>{spotTitle(n.spot)} / {n.spot.players}-max / {n.spot.stackBb} BB / {n.spot.openSizeBb}-{n.spot.threeBetSizeBb}-{n.spot.fourBetSizeBb} BB / {n.spot.format} / ante {n.spot.anteBb} / {n.spot.rake}</option>)}</select></label>
         <div className="import-area"><Upload size={24}/><h3>{t('Bring your own ranges', '导入你的范围数据')}</h3><p>{t('Import the GTO Reminder JSON format. Files stay on your device and are cleared when you refresh.', '导入 GTO Reminder 格式的 JSON。文件仅在本机读取，刷新后清空。')}</p><div><button className="primary-button" onClick={() => fileInput.current?.click()}><Plus size={15}/>{t('Import JSON', '导入 JSON')}</button><button className="text-button" onClick={() => download({...DEMO_DATASET,id:'my-strategy-template'},'gto-reminder-demo-template.json')}><ArrowDownToLine size={15}/>{t('Download template', '下载模板')}</button></div><input type="file" accept=".json,application/json" ref={fileInput} onChange={e => void importDataset(e.target.files?.[0])} hidden />{importError && <p className="import-error" role="alert">{importError}</p>}{importMessage && <p className="import-success" role="status"><Check size={15}/>{importMessage}</p>}</div>
         <div className="professional-sources"><h3>{t('Professional reference sources', '专业数据参考来源')}</h3><p>{t('Research links only. Their strategies are not bundled in this app.', '以下仅为研究来源链接，本应用未附带其策略数据。')}</p><a href="https://gtowizard.com/" target="_blank" rel="noreferrer"><span><strong>GTO Wizard</strong><small>{t('Solver library · licensing required for reuse', '求解器范围库 · 再使用需核实授权')}</small></span><ArrowUpRight size={17}/></a><a href="https://www.rangeconverter.com/" target="_blank" rel="noreferrer"><span><strong>RangeConverter</strong><small>{t('Preflop solutions · confirm export and usage rights', '翻前解决方案 · 核实导出及使用许可')}</small></span><ArrowUpRight size={17}/></a></div>

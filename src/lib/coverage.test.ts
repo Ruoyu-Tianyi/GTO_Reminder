@@ -8,8 +8,8 @@ const CONFIG: CoverageConfig = {
   openSizeBb: 2.5, threeBetSizeBb: 10, fourBetSizeBb: 22,
 };
 
-const counts = ({ expected, imported, demoOnly, missing, missingImported, importedFraction }: CoverageCounts): CoverageCounts =>
-  ({ expected, imported, demoOnly, missing, missingImported, importedFraction });
+const counts = ({ expected, imported, computed, computedOnly, demoOnly, missing, missingImported, importedFraction }: CoverageCounts): CoverageCounts =>
+  ({ expected, imported, computed, computedOnly, demoOnly, missing, missingImported, importedFraction });
 
 /** Synthetic fixtures exercise coverage classification, never poker accuracy. */
 function fixture(spots: Spot[], kind: Dataset['source']['kind'] = 'imported', id = 'test-import'): Dataset {
@@ -20,6 +20,7 @@ function fixture(spots: Spot[], kind: Dataset['source']['kind'] = 'imported', id
     source: {
       kind, name: 'Test fixture', url: 'https://example.com/test-fixture',
       license: 'Synthetic test data', retrievedAt: '2026-09-27',
+      ...(kind === 'computed' ? { computation: { engine: 'Synthetic test engine', model: 'Test model', iterations: 20, status: 'unconverged', scope: 'Test only' } } : {}),
     },
     nodes: spots.map((spot, index) => ({
       id: `${id}-${index}`, spot,
@@ -81,7 +82,7 @@ describe('limited v1 preflop coverage enumeration', () => {
 describe('source-aware coverage auditing', () => {
   it('reports the full acquisition checklist when no datasets exist', () => {
     const audit = auditCoverage([], CONFIG);
-    expect(counts(audit)).toEqual({ expected: 360, imported: 0, demoOnly: 0, missing: 360, missingImported: 360, importedFraction: 0 });
+    expect(counts(audit)).toEqual({ expected: 360, imported: 0, computed: 0, computedOnly: 0, demoOnly: 0, missing: 360, missingImported: 360, importedFraction: 0 });
     expect(audit.missingImportedSpots).toHaveLength(360);
     expect(audit.scope).toBe('v1-single-opponent-lines');
     expect(audit.scopeDescription).toContain('Excludes limps');
@@ -90,7 +91,7 @@ describe('source-aware coverage auditing', () => {
 
   it('never counts the four built-in demo nodes as imported coverage', () => {
     const audit = auditCoverage([DEMO_DATASET], CONFIG);
-    expect(counts(audit)).toEqual({ expected: 360, imported: 0, demoOnly: 4, missing: 356, missingImported: 360, importedFraction: 0 });
+    expect(counts(audit)).toEqual({ expected: 360, imported: 0, computed: 0, computedOnly: 0, demoOnly: 4, missing: 356, missingImported: 360, importedFraction: 0 });
     expect(audit.byPlayers.find((row) => row.players === 6)?.demoOnly).toBe(4);
     expect(audit.missingImportedSpots).toHaveLength(360);
     const entry = audit.entries.find((row) => row.status === 'demo-only');
@@ -125,10 +126,41 @@ describe('source-aware coverage auditing', () => {
     }
   });
 
+  it('separately counts computed spots, preserves model status, and keeps imported-source gaps', () => {
+    const spots = enumerateCoverageSpots(CONFIG, [7, 8]);
+    const computed = fixture(spots, 'computed', 'calculation');
+    const audit = auditCoverage([computed], CONFIG);
+    expect(counts(audit)).toEqual({ expected: 360, imported: 0, computed: 160, computedOnly: 160, demoOnly: 0, missing: 200, missingImported: 360, importedFraction: 0 });
+    expect(audit.byPlayers.map(row => row.computed)).toEqual([0, 0, 69, 91, 0]);
+    expect(audit.missingImportedSpots).toHaveLength(360);
+    const entry = audit.entries.find(row => row.status === 'computed-only');
+    expect(entry?.computedSources[0].source.computation).toMatchObject({ iterations: 20, status: 'unconverged' });
+    expect(entry?.importedSources).toEqual([]);
+    expect(auditCoverage([computed], { ...CONFIG, threeBetSizeBb: 9 }).computed).toBe(0);
+    expect(audit.sourceCaveat).toContain('never counts as imported');
+  });
+
+  it('deduplicates computed spots while retaining all references and imported overlap', () => {
+    const spot = DEMO_DATASET.nodes[0].spot;
+    const first = fixture([spot], 'computed', 'one');
+    const second = fixture([spot], 'computed', 'two');
+    const calculated = auditCoverage([DEMO_DATASET, first, second], CONFIG);
+    expect(calculated.computed).toBe(1);
+    expect(calculated.computedOnly).toBe(1);
+    expect(calculated.demoOnly).toBe(3);
+    const audit = auditCoverage([DEMO_DATASET, first, second, fixture([spot])], CONFIG);
+    expect(audit.imported).toBe(1);
+    expect(audit.computed).toBe(1);
+    expect(audit.computedOnly).toBe(0);
+    expect(audit.demoOnly).toBe(3);
+    expect(audit.missing).toBe(356);
+    expect(audit.entries.find(row => row.status === 'imported')?.computedSources.map(source => source.datasetId)).toEqual(['one', 'two']);
+  });
+
   it('reports full imported coverage only within the declared narrow scope', () => {
     const data = fixture(enumerateCoverageSpots(CONFIG));
     const audit = auditCoverage([data], CONFIG);
-    expect(counts(audit)).toEqual({ expected: 360, imported: 360, demoOnly: 0, missing: 0, missingImported: 0, importedFraction: 1 });
+    expect(counts(audit)).toEqual({ expected: 360, imported: 360, computed: 0, computedOnly: 0, demoOnly: 0, missing: 0, missingImported: 0, importedFraction: 1 });
     expect(audit.missingImportedSpots).toEqual([]);
     expect(audit.byPlayers.map((row) => row.imported)).toEqual([34, 50, 69, 91, 116]);
     expect(audit.sourceCaveat).toContain('does not independently verify accuracy');

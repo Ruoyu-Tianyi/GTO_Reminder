@@ -43,7 +43,88 @@ Import one UTF-8 JSON file with this structure. The abbreviated frequencies belo
 }
 ```
 
-The example numbers are format examples, not poker recommendations. `source.kind` is `demo` or `imported`; `imported` describes origin, not external verification. Source URL and license text remain user-supplied metadata. The app cannot verify the legal scope or solver quality of an uploaded file.
+The example numbers are format examples, not poker recommendations. `source.kind` is `demo`, `imported`, or `computed`; `imported` describes origin, not external verification. Source URL and license text remain user-supplied metadata. The app cannot verify the legal scope or solver quality of an uploaded file.
+
+## Locally computed sources
+
+The current verified inventory on 2026-10-13 contains **27,914 v2 history
+decisions, 212 v1 quick nodes, and 64 files** across the baseline and three expanded
+study packs. File validation confirms structure and action legality, not strategy
+quality; the expanded packs remain unconverged.
+
+For `source.kind: "computed"`, both v1 and v2 require `source.computation`:
+
+```json
+{
+  "engine": "Engine and version",
+  "model": "Explicit approximation model and configuration",
+  "iterations": 54,
+  "status": "approximate",
+  "scope": "The actual included tree, sizes, exclusions, and quality limitations"
+}
+```
+
+`engine`, `model`, and `scope` are nonempty strings. `iterations` is a nonnegative
+safe integer; `status` is `approximate` or `unconverged`. This metadata identifies
+a computation, not a claim that a full poker game has been solved. Source
+validation does not establish convergence. Final diagnostics, including an
+unmeasured final gap represented as `null`, belong in the corresponding local
+solver audit; do not substitute a preceding checkpoint's gap.
+
+Optional `computation.tree` declares fixed `openSizeBb`, `threeBetSizeBb`,
+`fourBetSizeBb`, integer `maxRaises` from 1 to 5, and boolean `limp`.
+The sizes are finite raise-to BB amounts excluding antes, at least 2 and
+nondecreasing. Equal future sizes can be unused terminal all-in placeholders;
+every action generated from a preset still passes legal replay. Optional
+`limpRaiseBb` explicitly gives the first raise-to after an unopened limp; it is
+not inferred from the opening size. Model presets reject unsupported limps,
+raise counts and undeclared limp-raise sizes. Optional `modelGapBb` is a finite,
+nonnegative final-snapshot **model** gap, or `null` when unmeasured. It is not
+real-game exploitability. Quick/history snapshot matching includes these fields.
+
+The verified baseline as of 2026-10-03 has four locally computed quick-lookup files with **126** v1
+nodes: 6/7/8/9 players have 20/27/35/44 RFI and Facing Open nodes respectively.
+They use Cash 100 BB, no ante, 5% rake capped at 2.5 BB, no flop no drop, 2.5 BB
+opens and 10 BB 3-bets. The solved tree allows at most two raises and no limp.
+It has no 4-bet or 5-bet continuation. Cold-call and squeeze decisions in that
+restricted tree are kept in v2, not mislabeled as v1 heads-up responses.
+
+The v1 export deliberately excludes Facing 3-bet/4-bet strategies from these
+local solves because v1 cannot express their historical reach and unreachable
+hands reliably. Use the [v2 history format](DATA_FORMAT_V2.md) and
+[local solver audit](LOCAL_SOLVER.md) for the 27,270 full-history decisions.
+All four table sizes reached the configured model target. The 9-player final
+snapshot is at 54 iterations with a measured model best-response gap sum of
+0.017725984946639545 BB/hand. This is an internal result of the restricted model,
+not a real-game exploitability guarantee. A node count is not a convergence or
+full-game coverage claim.
+
+Two additional four-raise study packs export 360 v2 decisions and 42 v1 quick
+nodes in four files. The 6-player pack allows limp and exports 200 history
+decisions after 39 iterations; the 7-player pack has no limp and exports 160 after
+40 iterations. Both retain `status: "unconverged"` and `modelGapBb: null`. Their
+fixed raises are 2.5 / 10 / 30 / 100 BB. The `heads-up-lines` export includes
+histories with at most two voluntary contributors and at most one unopened limp;
+the broader modeled tree is solved, but its other branches are not exported.
+Limp-capable RFI and later responses are viewed through v2 to preserve actions
+and reach, rather than forced into v1.
+
+When a selected local computed pack has no v1 node, Quick lookup queries its
+linked v2 pack using the exact complete history. This displays the original v2
+actions, reach, `missing`, and `unreachable` states; it does not flatten them into
+v1 frequencies. The shared source fields, including model, iterations, quality
+status, scope, and snapshot date, must match. Changed snapshots require a reload.
+Only observed bet sizes filter this v2 view; future sizing controls do not remove
+actions supplied by the model.
+
+The v1 coverage report counts `computed` spots separately from `imported` spots.
+Those source counts can overlap; `computedOnly` excludes any spot with an
+imported source. Full-history v2 decisions remain a separate count, so Quick's
+v2 lookup does not inflate v1 or imported coverage.
+
+Published charts and the estimated 7-player seat projection use a separate
+reference format. They are not imported into the exact-condition v1/v2 datasets;
+see [source coverage](PUBLIC_CHARTS.md).
 
 ## Exact spot matching
 

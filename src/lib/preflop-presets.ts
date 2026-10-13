@@ -1,4 +1,4 @@
-import { getPositions, type Position } from './poker';
+import { getPositions, type ComputationTree, type Position } from './poker';
 import { replayPreflop, type PreflopAction, type PreflopConfig } from './preflop';
 
 export const LINE_PRESETS = [
@@ -13,11 +13,25 @@ export const LINE_PRESETS = [
   { id: 'five-bet', en: 'Facing 5-Bet All-in', zh: '面对 5-Bet All-in' },
 ] as const;
 export type LinePreset = typeof LINE_PRESETS[number]['id'];
+export type PresetSizes = Pick<ComputationTree, 'openSizeBb' | 'threeBetSizeBb' | 'fourBetSizeBb'> & Partial<Pick<ComputationTree, 'limpRaiseBb' | 'maxRaises' | 'limp'>>;
+
+/** A disabled example is not a claim that all enabled examples have strategy data. */
+export function getPresetError(config: PreflopConfig, preset: LinePreset, sizes?: PresetSizes): string | null {
+  try { buildPreset(config, preset, sizes); return null; }
+  catch (error) { return error instanceof Error ? error.message : 'This example is unavailable.'; }
+}
 
 /** Example action histories only; these contain no strategy recommendations. */
-export function buildPreset(config: PreflopConfig, preset: LinePreset): PreflopAction[] {
+export function buildPreset(config: PreflopConfig, preset: LinePreset, sizes?: PresetSizes): PreflopAction[] {
   const history: PreflopAction[] = [];
   const positions = getPositions(config.players);
+  const openSizeBb = sizes?.openSizeBb ?? 2.5;
+  const threeBetSizeBb = sizes?.threeBetSizeBb ?? 8;
+  const fourBetSizeBb = sizes?.fourBetSizeBb ?? 22;
+  const requiredRaises: Record<LinePreset, number> = { unopened: 0, 'bb-open': 1, limp: 0, 'limp-raise': 1, squeeze: 1, 'cold-four': 2, 'three-bet': 2, 'four-bet': 3, 'five-bet': 4 };
+  if (sizes?.maxRaises !== undefined && requiredRaises[preset] > sizes.maxRaises) throw new Error(`This example exceeds the selected model's ${sizes.maxRaises}-raise limit.`);
+  if ((preset === 'limp' || preset === 'limp-raise') && sizes?.limp === false) throw new Error('The selected model does not include unopened limps.');
+  if (preset === 'limp-raise' && sizes && sizes.limpRaiseBb === undefined) throw new Error('The selected model does not declare a raise size after a limp. Build this history with its documented size.');
   function act(type: PreflopAction['type'], amountBb?: number) {
     const actor = replayPreflop(config, history).nextActor;
     if (!actor) throw new Error('This example needs deeper stacks. Reset to 100 BB.');
@@ -34,16 +48,16 @@ export function buildPreset(config: PreflopConfig, preset: LinePreset): PreflopA
   if (preset === 'unopened') { foldTo('BTN'); return history; }
   if (preset === 'limp' || preset === 'limp-raise') {
     foldTo('SB'); act('call');
-    if (preset === 'limp-raise') act('raise', 4);
+    if (preset === 'limp-raise') act('raise', sizes?.limpRaiseBb ?? 4);
     return history;
   }
-  if (preset === 'bb-open') { foldTo('BTN'); act('raise', 2.5); foldTo('BB'); return history; }
-  act('raise', 2.5);
+  if (preset === 'bb-open') { foldTo('BTN'); act('raise', openSizeBb); foldTo('BB'); return history; }
+  act('raise', openSizeBb);
   if (preset === 'squeeze') { act('call'); foldTo('BTN'); return history; }
-  if (preset === 'cold-four') { act('raise', 8); foldTo('SB'); return history; }
-  foldTo('BTN'); act('raise', 8); foldTo(positions[0]);
+  if (preset === 'cold-four') { act('raise', threeBetSizeBb); foldTo('SB'); return history; }
+  foldTo('BTN'); act('raise', threeBetSizeBb); foldTo(positions[0]);
   if (preset === 'three-bet') return history;
-  act('raise', 22);
+  act('raise', fourBetSizeBb);
   if (preset === 'five-bet') {
     const state = replayPreflop(config, history);
     act('raise', state.legal.maxRaiseToBb);
