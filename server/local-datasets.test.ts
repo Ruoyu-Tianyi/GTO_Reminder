@@ -9,6 +9,7 @@ import { localDatasets } from './local-datasets';
 import { createTreeTemplate } from '../src/lib/tree-strategy';
 import * as treeStrategy from '../src/lib/tree-strategy';
 import type { PreflopAction } from '../src/lib/preflop';
+import * as standardCoverage from '../src/lib/standard-coverage';
 
 type ResponseHeaders = Record<string, string>;
 type Handler = (
@@ -213,7 +214,7 @@ describe('on-demand local tree library', () => {
     expect(summary.datasets.map((entry: Dataset) => entry.id)).toEqual(['legacy']);
     expect(summary.treeDatasets).toEqual([]);
     expect(summary.errors).toEqual([]);
-    expect(summary.treeLibrary[0]).toEqual({ id: first.id, name: first.name, game: first.game, source: first.source, nodeCount: 1 });
+    expect(summary.treeLibrary[0]).toEqual({ id: first.id, name: first.name, game: first.game, source: first.source, nodeCount: 1, standardSpots: standardCoverage.summarizeStandardSpots(first) });
     expect(summary.treeLibrary.map((entry: { id: string }) => entry.id)).toEqual(['first-tree', 'second-tree']);
     expect(JSON.stringify(summary.treeLibrary)).not.toContain('hands');
     const selected = JSON.parse((await app.request('GET', '/?treeId=second-tree')).body!);
@@ -231,14 +232,17 @@ describe('on-demand local tree library', () => {
     const app = await harness();
     await app.put('tree.json', treeFixture('cached-tree'));
     const validate = vi.spyOn(treeStrategy, 'validateTreeDataset');
+    const summarize = vi.spyOn(standardCoverage, 'summarizeStandardSpots');
     await Promise.all([app.request('GET', '/?summary=1'), app.request('GET', '/?summary=1')]);
     expect(validate).toHaveBeenCalledTimes(1);
+    expect(summarize).toHaveBeenCalledTimes(1);
     await app.request('GET', '/?treeId=cached-tree');
     expect(validate).toHaveBeenCalledTimes(2);
     await app.request('GET', '/?treeId=cached-tree');
     await app.request('GET', '/?summary=1');
     expect(validate).toHaveBeenCalledTimes(2);
     const changed = treeFixture('cached-tree');
+    expect(summarize).toHaveBeenCalledTimes(2);
     changed.name = 'A changed tree with a different byte length';
     await app.put('tree.json', changed);
     const refreshed = JSON.parse((await app.request('GET', '/?summary=1')).body!);
@@ -250,6 +254,22 @@ describe('on-demand local tree library', () => {
     await rm(path.join(app.directory, 'tree.json'));
     expect(JSON.parse((await app.request('GET', '/?summary=1')).body!).treeLibrary).toEqual([]);
     expect(JSON.parse((await app.request('GET', '/?treeId=cached-tree')).body!).treeDatasets).toEqual([]);
+  });
+
+  it('exposes cached status-only standard histories and excludes a cold-call decision', async () => {
+    const app = await harness();
+    const tree = treeFixture('audited');
+    const coldCall = createTreeTemplate(tree.game, [{ actor: 'UTG', type: 'raise', amountBb: 2.5 }, { actor: 'LJ', type: 'call' }]);
+    coldCall.nodes[0].id = 'cold-call';
+    tree.nodes.push(coldCall.nodes[0]);
+    tree.nodes[0].hands.AA = { status: 'available', reach: 1, frequencies: Object.fromEntries(tree.nodes[0].actions.map(action => [action.id, action.type === 'fold' ? 1 : 0])) };
+    tree.nodes[0].hands.KK = { status: 'unreachable', reach: 0 };
+    await app.put('tree.json', tree);
+    const summary = JSON.parse((await app.request('GET', '/?summary=1')).body!).treeLibrary[0];
+    expect(summary.nodeCount).toBe(2);
+    expect(summary.standardSpots).toEqual([{ key: '7:rfi:UTG:-', players: 7, kind: 'rfi', hero: 'UTG', villain: null, history: [], availableHands: 1, unreachableHands: 1, missingHands: 167 }]);
+    expect(JSON.stringify(summary.standardSpots)).not.toMatch(/frequencies|"reach"|"AA"/);
+    expect(JSON.parse((await app.request('GET', '/?summary=1')).body!).treeLibrary[0]).toEqual(summary);
   });
 
   it('bounds the full payload cache and reloads an evicted tree only when selected', async () => {

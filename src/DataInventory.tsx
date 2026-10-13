@@ -7,6 +7,8 @@ import { getPositions, validateDataset } from './lib/poker';
 import type { PublishedChartsResponse } from './lib/published-charts';
 import type { ReferenceRange, ReferenceRangesResponse } from './lib/reference-ranges';
 import type { ReferenceSelection } from './PublishedCharts';
+import type { PreflopAction } from './lib/preflop';
+import { STANDARD_KINDS, type StandardKind, type StandardCounts, type StandardEvidence } from './lib/standard-coverage';
 import './inventory.css';
 
 type Translate = (en: string, zh: string) => string;
@@ -20,7 +22,7 @@ async function readJson<T>(url: string, signal: AbortSignal): Promise<T> {
 }
 
 export default function DataInventory({ t, onReference, onTree }: {
-  t: Translate; onReference: (selection: ReferenceSelection) => void; onTree: (id: string) => void;
+  t: Translate; onReference: (selection: ReferenceSelection) => void; onTree: (id: string, history?: PreflopAction[]) => void;
 }) {
   const [input, setInput] = useState<InventoryInput>(EMPTY_INPUT);
   const [errors, setErrors] = useState<string[]>([]);
@@ -28,11 +30,18 @@ export default function DataInventory({ t, onReference, onTree }: {
   const [refresh, setRefresh] = useState(0);
   const [updatedAt, setUpdatedAt] = useState('');
   const [players, setPlayers] = useState(0);
+  const [standardSelection, setStandardSelection] = useState<{ players: number; kind: StandardKind }>({ players: 6, kind: 'rfi' });
   const inventory = useMemo(() => buildDataInventory(input), [input]);
   const referenceNodes = useMemo(() => [...(input.publishedCharts ?? []).map(displayPublishedChart), ...(input.referenceRanges ?? [])], [input]);
   const refs = inventory.totals.references;
   const local = inventory.totals.local;
   const packs = inventory.packs?.filter(pack => !players || pack.players === players);
+  const standard = inventory.standard;
+  const standardRows = standard.cases.filter(spot => spot.players === standardSelection.players && spot.kind === standardSelection.kind);
+  const standardLabel = (kind: StandardKind) => kind === 'bb-vs-sb-limp' ? 'BB vs SB Limp' : kind === 'sb-limp-vs-bb-raise' ? 'SB Limp vs BB Raise' : kind === 'vs-5bet' ? t('Facing 5-Bet', '面对 5-Bet') : REFERENCE_KIND_LABELS[kind];
+  const standardNumber = (count: number) => standard.complete ? number(count) : count > 0 ? `≥ ${number(count)}` : '—';
+  const evidenceLabel = (channel: StandardEvidence['channel']) => ({ original: t('Source chart', '出版参考'), projected: t('Seat projection', '座位投影'), computed: t('Model approximation', '计算近似'), unconverged: t('Not converged', '未确认收敛'), imported: t('Imported', '导入'), demo: t('Demo · not counted', '演示 · 不计入'), unknown: t('Quality unknown', '质量未知') })[channel];
+  const coverageDetail = (counts: StandardCounts) => `${t('Source', '出版')} ${counts.original} · ${t('Projection', '投影')} ${counts.projected} · ${t('Model', '近似')} ${counts.computed} · ${t('Unconverged', '未收敛')} ${counts.unconverged}${counts.imported ? ` · ${t('Imported', '导入')} ${counts.imported}` : ''}${counts.unknown ? ` · ${t('Unknown quality', '质量未知')} ${counts.unknown}` : ''} · ${t('Missing', '缺少可读数据')} ${number(counts.missing ?? undefined)}`;
   const qualityLabel = (quality: InventoryQuality) => ({
     approximate: t('MODEL APPROXIMATION', '模型近似解'), unconverged: t('NOT CONVERGED', '未确认收敛'),
     imported: t('IMPORTED', '外部导入'), demo: t('DEMO', '演示'), unknown: t('QUALITY UNKNOWN', '质量未知'),
@@ -61,6 +70,7 @@ export default function DataInventory({ t, onReference, onTree }: {
         referenceRanges: extended.status === 'fulfilled' && !extended.value.error ? extended.value.nodes : null,
         datasets: computed.status === 'fulfilled' ? computed.value.datasets : null,
         treeLibrary: computed.status === 'fulfilled' ? computed.value.treeLibrary : null,
+        localIncomplete: computed.status === 'fulfilled' && computed.value.errors.length > 0,
       });
       setErrors(problems); setUpdatedAt(new Date().toISOString()); setLoading(false);
     }
@@ -71,6 +81,19 @@ export default function DataInventory({ t, onReference, onTree }: {
     const report = { schemaVersion: 1, generatedAt: updatedAt, scope: 'Local reference charts and stored strategy metadata. Counts do not establish complete GTO coverage; Quick nodes overlap tree decisions.', errors, ...inventory };
     const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = `gto-data-inventory-${updatedAt.slice(0, 10)}.json`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportStandardGaps() {
+    const readable = (item: StandardEvidence) => item.channel !== 'demo' && item.availableHands > 0;
+    const report = { schemaVersion: 1, generatedAt: updatedAt, scope: standard.scope, complete: standard.complete,
+      note: 'Category availability only. Reference conditions are not fully established. Model rake, sizes and full source snapshots remain separate. Missing hands are not folds. Demo data is excluded.',
+      errors, unknownTreeEntries: standard.unknownTreeEntries, excludedConditionEntries: standard.excludedConditionEntries,
+      unavailableCases: standard.cases.filter(spot => !spot.evidence.some(readable)),
+      partialCases: standard.cases.filter(spot => spot.evidence.some(readable) && !spot.evidence.some(item => readable(item) && item.missingHands === 0)),
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = `gto-standard-gaps-${updatedAt.slice(0, 10)}.json`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
@@ -93,6 +116,24 @@ export default function DataInventory({ t, onReference, onTree }: {
       <div className="inventory-metric"><span>{t('Computed model packs', '本机计算模型')}</span><strong>{number(local?.bySource.computed.modelPacks)}</strong><p>{local ? `${local.qualityCounts.unconverged} ${t('not confirmed converged', '个未确认收敛')}` : t('Waiting for local data', '等待本地数据')}</p></div>
       <div className="inventory-metric"><span>{t('Computed decisions', '本机计算决策')}</span><strong>{number(local?.bySource.computed.decisionNodes)}</strong><p>{t('Stored across models; may overlap', '按各模型累加，场景可能重叠')}</p></div>
     </div>
+    <section className="panel inventory-section inventory-standard"><div className="inventory-library-heading"><div><h3>{t('Standard preflop catalogue · 434 categories', '标准翻前目录 · 434 类场景')}</h3><p className="inventory-note">{t('6–9 seats, 100 BB. Each seat matchup is a category; different sizes, rake profiles and source snapshots remain separate. Readable means at least one known hand in a non-demo source, not a complete or exact GTO solution.', '6–9 人、100 BB。每个位置对局算一类；不同尺寸、抽水与来源快照各自保留。有数据指非演示来源至少一手可读，不代表手牌齐全或完整、精确的 GTO 解。')}</p></div><button className="secondary-button" disabled={loading || !updatedAt} onClick={exportStandardGaps}><ArrowDownToLine size={14}/>{t('Export gaps', '导出缺口')}</button></div>
+      <p className="inventory-standard-total"><strong>{standardNumber(standard.totals.readable)} / 434</strong> {t('categories have readable data', '类有可读数据')} · {standardNumber(standard.totals.resolved)} {t('have a source with no unknown hand rows', '类至少一个来源无未知手牌记录')}{!standard.complete && <span> · {t('Audit incomplete; missing counts unknown', '审计未完成，缺失数量未知')}</span>}</p>
+      <div className="inventory-scroll"><table className="inventory-table inventory-standard-table"><thead><tr><th scope="col">{t('Category', '类别')}</th>{standard.byPlayers.map(row => <th scope="col" key={row.players}>{row.players}-max · {row.counts.total}</th>)}</tr></thead><tbody>{STANDARD_KINDS.map(kind => <tr key={kind}><th scope="row">{standardLabel(kind)}</th>{standard.byPlayers.map(row => {
+        const counts = row.byKind[kind];
+        return <td key={row.players}><button className="inventory-standard-cell" aria-pressed={row.players === standardSelection.players && kind === standardSelection.kind} onClick={() => setStandardSelection({ players: row.players, kind })}><strong>{standardNumber(counts.readable)} / {counts.total}</strong><span>{coverageDetail(counts)}</span></button></td>;
+      })}</tr>)}</tbody></table></div>
+      <p className="inventory-note">{t('Source columns overlap and cannot be added. Model rows require zero ante and 100 BB at every seat; source charts have unconfirmed ante/rake. “No unknown rows” permits explicitly unreachable model hands. It does not mean every hand has a frequency.', '来源列会重叠，不能相加。模型仅计全员 100 BB、无 Ante；出版图的 Ante／抽水条件未完全确认。“无未知记录”允许模型明确标注不可达的手牌，不等于每手都有频率。')}</p>
+      {(standard.unknownTreeEntries > 0 || standard.excludedConditionEntries > 0) && <p className="inventory-note">{t('Unaudited model files', '未审计模型文件')} {standard.unknownTreeEntries} · {t('Files/charts outside the target conditions', '不符合目标条件的文件／图表')} {standard.excludedConditionEntries}</p>}
+      <div className="inventory-standard-cases"><h4>{standardSelection.players}-max · {standardLabel(standardSelection.kind)}</h4>{standardRows.map(spot => {
+        const sources = spot.evidence.filter(item => item.availableHands > 0 && item.channel !== 'demo');
+        return <details className="inventory-standard-case" key={spot.key}><summary><strong>{spot.hero}{spot.villain ? ` vs ${spot.villain}` : ''}</strong><span>{sources.length ? `${sources.length} ${t('source / condition entries', '条来源／条件记录')}` : standard.complete ? t('No readable data', '暂无可读数据') : t('Availability not fully audited', '数据尚未完整审计')}</span></summary><div className="inventory-standard-sources">{spot.evidence.map((item, index) => <article key={`${item.datasetId ?? item.chartId}:${item.conditionKey}:${index}`}><div><span className="status-pill">{evidenceLabel(item.channel)}</span><strong>{item.name.replace(/ · part \d+\/\d+$/, '')}</strong></div><p>{item.availableHands} {t('readable', '手可读')} · {item.unreachableHands} {t('unreachable', '手不可达')} · {item.missingHands} {t('unknown', '手未知')}</p>
+          {item.game ? <p>{item.game.rake} · Ante {item.game.anteBb} BB · {t('Historical raise-to sizes', '历史加注至')} {item.history?.filter(action => action.type === 'raise').map(action => `${action.actor} ${action.amountBb} BB`).join(' → ') || '—'}</p> : <p>{item.reference?.precision} · {t('Ante/rake not fully established; check the chart.', 'Ante／抽水未完全确认，请核对原图。')}</p>}
+          {'kind' in item.source && item.source.computation?.tree?.model === 'restricted-entry-k3-limp1-v1' && <p className="inventory-restricted">{t('Restricted model: at most 3 voluntary contributors and 1 unopened limp. Later entrants facing a bet must fold.', '受限模型：整段历史最多 3 人主动入池、1 次未加注 Limp；达到人数上限后，其他玩家面对下注必须弃牌。')}</p>}
+          {item.datasetId && item.history && <button className="secondary-button" onClick={() => onTree(item.datasetId!, item.history)}>{t('Open this decision', '打开此决策')}<ArrowUpRight size={13}/></button>}
+          {item.chartId && <button className="secondary-button" onClick={() => { const node = referenceNodes.find(node => node.id === item.chartId); if (node) onReference(node); }}>{t('Open this reference', '打开此参考图')}<ArrowUpRight size={13}/></button>}
+        </article>)}{spot.evidence.length === 0 && <p className="inventory-note">{t('No matching entry found in the loaded sources. Use the gap export to inspect this category and the audit status.', '已加载来源中没有对应记录，可导出缺口查看此类别及审计状态。')}</p>}</div></details>;
+      })}</div>
+    </section>
     <section className="panel inventory-section"><h3>{t('Reference scenarios · 100 BB', '参考场景 · 100 BB')}</h3><p className="inventory-note">{t('Click a count to open that scenario. Numbers count charts; a chart can still contain unknown hands. Estimates are counted separately from original sources.', '点击数量进入对应场景。这里统计图表张数，一张图内仍可能有未知手牌；投影估算与原始来源分别计数。')}</p>
       <div className="inventory-scroll"><table className="inventory-table"><thead><tr><th scope="col">{t('Scenario', '场景')}</th>{inventory.byPlayers.map(row => <th scope="col" key={row.players}>{row.players}-max</th>)}</tr></thead><tbody>
         {INVENTORY_REFERENCE_KINDS.map(kind => <tr key={kind}><th scope="row">{REFERENCE_KIND_LABELS[kind]}</th>{inventory.byPlayers.map(row => {

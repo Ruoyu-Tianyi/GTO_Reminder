@@ -3,9 +3,28 @@ import { DEMO_DATASET } from '../data/demo';
 import { validateComputation, validateDataset } from './poker';
 import { createTreeTemplate, validateTreeDataset } from './tree-strategy';
 import { auditCoverage } from './coverage';
+import { validateStudyQuery } from './study-session';
+import { bindStudyDataset, matchesStudyDataset } from './study-bindings';
 
 const computation = { engine: 'Test engine', model: 'Synthetic restricted model', iterations: 40, status: 'unconverged' as const, scope: 'Test only: fixed open and three-bet, no further raises.' };
 describe('computed provenance is explicit and survives validation', () => {
+  it('preserves restricted entry identity through strategy and bookmark validation', () => {
+    const tree = {openSizeBb: 2.5, threeBetSizeBb: 10, fourBetSizeBb: 30, maxRaises: 4, limp: true,
+      model: 'restricted-entry-k3-limp1-v1' as const, maxVoluntaryContributors: 3 as const, maxUnopenedLimps: 1 as const};
+    const full = createTreeTemplate({players: 9, stackBb: 100, anteBb: 0, rake: 'test', format: 'cash'}, []);
+    full.source = {...full.source, kind: 'computed', computation: {...computation, tree}};
+    const validated = validateTreeDataset(full);
+    expect(validated.source.computation?.tree).toEqual(tree);
+    const binding = bindStudyDataset(validated);
+    const saved = validateStudyQuery({view: 'tree', game: full.game, history: [], hand: 'AA', binding});
+    expect(saved.binding).toEqual(binding);
+    const unrestricted = {...validated, source: {...validated.source, computation: {...computation,
+      tree: {openSizeBb: 2.5, threeBetSizeBb: 10, fourBetSizeBb: 30, maxRaises: 4, limp: true}}}};
+    expect(matchesStudyDataset(binding, unrestricted)).toBe(false);
+    for (const patch of [{model: undefined}, {model: 'unknown'}, {maxVoluntaryContributors: 2}, {maxUnopenedLimps: 2}, {maxUnopenedLimps: undefined}]) {
+      expect(() => validateComputation({...computation, tree: {...tree, ...patch}})).toThrow('Restricted-entry');
+    }
+  });
   it('requires computation metadata for v1 and excludes it from imported coverage', () => {
     const raw = structuredClone(DEMO_DATASET);
     raw.source.kind = 'computed'; raw.source.computation = computation;

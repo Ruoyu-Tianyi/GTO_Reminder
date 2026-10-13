@@ -39,6 +39,92 @@ POSITIONS = {
 RANKS = "23456789TJQKA"
 ENGINE_URL = "https://github.com/MatthewPDingle/GTOpen"
 PINNED_COMMIT = "b69ea07c79884fc598757dc45c712e73976db810"
+RESTRICTED_MODEL = "restricted-entry-k3-limp1-v1"
+
+
+def restriction_note(config):
+    if not config.get("restricted_entry_k3_limp1"):
+        return ""
+    return ("RESTRICTED GAME restricted-entry-k3-limp1-v1: at most three seats may ever voluntarily "
+            "contribute chips, including contributors that later fold; blinds/antes/checks do not count. "
+            "Other seats are forced to Fold when facing a bet (free Check remains). At most one unopened "
+            "Limp is permitted; further overlimps are removed. These restrictions affect upstream strategy "
+            "computation; this is not a solution of the unrestricted full-table game. ")
+
+
+def restricted_provenance(args):
+    """Verify exact patched sources and bind the built executable to them."""
+    if not getattr(args, "restricted_entry", False):
+        return None
+    import importlib.util
+    path = Path(__file__).with_name("apply-local-solver-patch.py")
+    spec = importlib.util.spec_from_file_location("restricted_patch", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    fingerprint = module.verify_sources(args.engine_dir)
+    record = json.loads((args.engine_dir / ".restricted-build.json").read_text(encoding="utf-8"))
+    if record.get("source") != fingerprint or record.get("binarySha256") != sha256_file(engine_executable(args)):
+        raise RuntimeError("Restricted engine source/build fingerprint differs; rebuild with apply-local-solver-patch.py --build")
+    return {**record, "payoffInputs": restricted_payoff_inputs(args, allow_missing_equity=True)}
+
+
+def restricted_payoff_inputs(args, allow_missing_equity=False):
+    """Bind the actual fixed-CWD payoff inputs, including the default fit."""
+    if os.environ.get("REALIZATION_FIT"):
+        raise RuntimeError("Restricted games reject REALIZATION_FIT overrides; use the pinned default calibration")
+    root = args.engine_dir.resolve()
+    fit = root / "cache" / "realization_fit.json"
+    expected = subprocess.check_output(["git", "show", PINNED_COMMIT + ":cache/realization_fit.json"], cwd=root)
+    if not fit.is_file() or fit.read_bytes() != expected:
+        raise RuntimeError("Restricted game calibration differs from the pinned default realization_fit.json")
+    cache = root / "cache" / "preflop_eq169.bin"
+    cache_hash = None
+    if cache.is_file():
+        contents = cache.read_bytes()
+        if len(contents) != 4 + 169 * 169 * 4 or int.from_bytes(contents[:4], "little") != 20000:
+            raise RuntimeError("Restricted game requires a 20,000-sample 169-class pairwise equity cache")
+        cache_hash = hashlib.sha256(contents).hexdigest()
+    elif not allow_missing_equity:
+        raise RuntimeError("Restricted game equity cache is missing; restore requires the original payoff inputs")
+    return {"realizationFitPath": "cache/realization_fit.json", "realizationFitSha256": hashlib.sha256(expected).hexdigest(),
+            "equityCachePath": "cache/preflop_eq169.bin", "equityCacheSha256": cache_hash,
+            "equitySamplesPerClassPair": 20000}
+
+
+def verify_restricted_payoffs(args, allow_initial_cache=False):
+    if not getattr(args, "restricted_entry", False):
+        return
+    current = restricted_payoff_inputs(args)
+    expected = args.restricted_provenance["payoffInputs"]
+    if allow_initial_cache and expected["equityCacheSha256"] is None:
+        expected = {**expected, "equityCacheSha256": current["equityCacheSha256"]}
+        args.restricted_provenance["payoffInputs"] = expected
+    if expected != current:
+        raise RuntimeError("Restricted payoff inputs changed during this invocation; refusing save/export")
+
+
+def validate_restricted_restore_inputs(args, audit, config):
+    if not config.get("restricted_entry_k3_limp1"):
+        return
+    expected = getattr(args, "restricted_provenance", {}).get("payoffInputs")
+    recorded = audit.get("restrictedEngine", {}).get("payoffInputs")
+    if not recorded or not expected or not expected.get("equityCacheSha256") or recorded != expected:
+        raise RuntimeError("Restricted restore requires matching recorded calibration/equity fingerprints; old v5 saves without them cannot be automatically migrated")
+
+
+def cleanup_owned_restricted_process(args, process):
+    """Only the Popen created by this invocation; v4 keeps its live workflow."""
+    if not getattr(args, "restricted_entry", False) or process is None or process.poll() is not None:
+        return
+    try:
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
+    except ProcessLookupError:
+        pass  # It exited between poll and terminate.
 
 
 def validate_standard_config(actual, expected):
@@ -60,8 +146,9 @@ def inspect_save(path, config):
     """Validate the pinned engine's bounded JSON header and two raw arenas."""
     before = path.stat()
     with path.open("rb") as stream:
-        if stream.readline(32) != b"GTOPREFLOP4\n":
-            raise RuntimeError("Restore requires the audited balanced-model v4 save format")
+        expected_magic = b"GTOPREFLOP5\n" if config.get("restricted_entry_k3_limp1") else b"GTOPREFLOP4\n"
+        if stream.readline(32) != expected_magic:
+            raise RuntimeError("Restore requires the audited save format for this model (v4 ordinary / v5 restricted)")
         line = stream.readline(1024 * 1024 + 1)
         if not line.endswith(b"\n") or len(line) > 1024 * 1024:
             raise RuntimeError("Invalid or oversized save header")
@@ -154,8 +241,11 @@ def prepare_restore(args, players):
         executable = engine_executable(args)
         if audit.get("engineBinarySha256") != sha256_file(executable):
             raise RuntimeError("Compiled engine differs from the one recorded with this save")
+        validate_restricted_restore_inputs(args, audit, config)
         origin = "checksum-sidecar"
     else:
+        if config.get("restricted_entry_k3_limp1"):
+            raise RuntimeError("Restricted restore requires a sidecar with recorded calibration/equity fingerprints")
         # Older project saves predate checksummed sidecars. Only a revision-bearing
         # audit for this exact configuration/iteration may bootstrap one.
         matched = matching_resume_audits(args, stem, config, snapshot["iteration"])
@@ -172,6 +262,8 @@ def study_stem(config, players):
 
 
 def engine_executable(args):
+    if getattr(args, "engine_binary", None):
+        return args.engine_binary.resolve()
     return args.engine_dir.resolve() / "target" / "release" / ("gto-server.exe" if os.name == "nt" else "gto-server")
 
 
@@ -186,6 +278,7 @@ def tree_boundary(config):
 
 def save_resume_metadata(args, stem, config, status, elapsed, checkpoints):
     """Bind future restoration to the saved bytes, not merely its filename."""
+    verify_restricted_payoffs(args)
     path = args.engine_dir.resolve() / "saves" / "preflop" / (stem + ".gtop")
     snapshot = inspect_save(path, config)
     if snapshot["iteration"] != status.get("published_iteration") or snapshot["iteration"] != status.get("iteration"):
@@ -193,6 +286,8 @@ def save_resume_metadata(args, stem, config, status, elapsed, checkpoints):
     audit = {"engineCommit": args.engine_commit, "engineConfig": config, "status": status,
              "elapsedSeconds": elapsed, "accuracyCheckpoints": checkpoints,
              "save": snapshot, "engineBinarySha256": sha256_file(engine_executable(args))}
+    if getattr(args, "restricted_provenance", None):
+        audit["restrictedEngine"] = args.restricted_provenance
     validate_resume_audit(audit, config, snapshot["iteration"], args.engine_commit)
     write_bytes_atomic(path.with_suffix(".resume.json"), json.dumps(audit, indent=2).encode("utf-8"))
     return {"name": stem, **snapshot}
@@ -216,7 +311,7 @@ def request(base, endpoint, body=None, timeout=120):
 
 
 def config_for(args, players):
-    return {
+    config = {
         "positions": POSITIONS[players], "stack": 100.0,
         "posts": [0.0] * (players - 2) + [0.5, 1.0], "ante": 0.0,
         "limp": args.limp, "open_raises": [args.open_size],
@@ -225,6 +320,9 @@ def config_for(args, players):
         "rake_pct": args.rake, "rake_cap": args.rake_cap, "no_flop_no_drop": True,
         "realization": "balanced",
     }
+    if getattr(args, "restricted_entry", False):
+        config["restricted_entry_k3_limp1"] = True
+    return config
 
 
 def tree_parameters(config):
@@ -236,6 +334,8 @@ def tree_parameters(config):
     fourbet = bounded(max(threebet * config["fourbet_mults"][0], 2 * threebet - opened))
     result = {"openSizeBb": opened, "threeBetSizeBb": threebet, "fourBetSizeBb": fourbet,
               "maxRaises": config["max_raises"], "limp": config["limp"]}
+    if config.get("restricted_entry_k3_limp1"):
+        result.update(model=RESTRICTED_MODEL, maxVoluntaryContributors=3, maxUnopenedLimps=1)
     if config["limp"]:
         # This engine uses the same first-raise menu after a limp; no surcharge.
         result["limpRaiseBb"] = opened
@@ -530,6 +630,8 @@ def stream_tree_chunks(base, dataset, config, output, stem, max_nodes, max_bytes
 
 
 def run(args, players):
+    if getattr(args, "restricted_entry", False) and not getattr(args, "started_server", False):
+        raise RuntimeError("Restricted games require a fresh dedicated --start-server process; continue a saved game with --restore-save, not live --resume")
     active = request(args.url, "status")
     if active.get("state") == "running":
         raise RuntimeError("Another solve is running on this server; refusing to replace its session")
@@ -578,6 +680,14 @@ def run(args, players):
                 previous_checkpoints = prior["accuracyCheckpoints"]
     else:
         request(args.url, "spot", cfg)
+        if cfg.get("restricted_entry_k3_limp1"):
+            # Old serde engines ignore unknown fields. Read-back proof is
+            # mandatory before solving/exporting under the restricted identity.
+            session = request(args.url, "session")
+            validate_standard_config(session["config"], cfg)
+            if session.get("realization_note") or session.get("multiway_equity_model") != "coupled_deck_v1":
+                raise RuntimeError("Restricted session reports a changed/fallback payoff model")
+    verify_restricted_payoffs(args, allow_initial_cache=not args.resume)
     start = time.monotonic()
     last_progress = start
     checkpoints = list(previous_checkpoints)
@@ -613,6 +723,7 @@ def run(args, players):
         raise RuntimeError(f"Solver reported an error; existing saved/exported data was preserved: {status['error']}")
     if status.get("realization_note"):
         raise RuntimeError("The engine reports a changed/fallback realization model; saved/exported data was preserved")
+    verify_restricted_payoffs(args)
     if not (args.export_only and restored):
         request(args.url, "save", {"name": stem})
     saved_snapshot = save_resume_metadata(args, stem, cfg, status, previous_seconds + elapsed, checkpoints)
@@ -638,7 +749,7 @@ def run(args, players):
              "NOT CONVERGED / accuracy not established for final snapshot")
     metric = (f"summed model best-response gap {status['gap_total']:.9g} BB/hand at iteration {measured}, target {actual_target:g} BB/hand"
               if measured is not None else "final snapshot model best-response gap unmeasured")
-    precision = (f"COMPUTED approximate continuation/checkdown model; NOT full NLHE GTO. "
+    precision = (f"{restriction_note(cfg)}COMPUTED approximate continuation/checkdown model; NOT full NLHE GTO. "
                  f"coupled_deck_v1 (1,024 latent-strength samples; no joint physical-card removal), "
                  f"balanced HU; {status['iteration']} iterations; {state}; {metric}; "
                  f"max raises={args.max_raises}, limps={args.limp}; fixed sizes only. {tree_boundary(cfg)} "
@@ -650,12 +761,16 @@ def run(args, players):
               "license": "Locally computed private research output. Upstream code is not bundled; no explicit upstream code redistribution license found at the pinned revision.",
               "retrievedAt": datetime.now(timezone.utc).isoformat(), "precision": precision,
               "computation": {"engine": "GTOpen " + args.engine_commit,
-                              "model": "coupled_deck_v1 + balanced HU",
+                              "model": (RESTRICTED_MODEL + " + " if cfg.get("restricted_entry_k3_limp1") else "") + "coupled_deck_v1 + balanced HU",
                               "iterations": status["iteration"],
                               "status": "approximate" if converged else "unconverged",
                               "modelGapBb": status.get("gap_total") if measured is not None and measured == status.get("published_iteration") else None,
                               "tree": tree_parameters(cfg),
                               "scope": f"{players} players; equal 100 BB; no ante; open {args.open_size:g} BB; 3bet {args.threebet_multiplier:g}x; later raises {args.fourbet_multiplier:g}x; max {args.max_raises} raises; limps={args.limp}; no extra jam option. {tree_boundary(cfg)} Non-all-in leaves end betting and use approximate continuation; no full postflop solve. {state}; {metric}. The gap measures only this model, not real-game exploitability. Export scope={args.export_scope} (heads-up-lines, when selected, limits exported paths to two voluntary contributors and at most one unopened limp, without changing the solved tree)."}}
+    source["computation"]["scope"] = restriction_note(cfg) + source["computation"]["scope"]
+    if cfg.get("restricted_entry_k3_limp1"):
+        source["name"] = "COMPUTED · RESTRICTED K=3 / one-limp continuation game"
+        source["computation"]["engine"] += " + local " + RESTRICTED_MODEL
     metadata = {"engineCommit": args.engine_commit, "engineConfig": cfg, "status": status,
                 "elapsedSeconds": previous_seconds + elapsed, "latestSolveSeconds": elapsed,
                 "resumedFromIteration": resumed_from, "exportOnly": args.export_only,
@@ -673,15 +788,26 @@ def run(args, players):
                                    "targetModelBestResponseGapBb": actual_target,
                                    "realGameExploitability": None,
                                    "limitations": precision}}
+    if getattr(args, "restricted_provenance", None):
+        metadata["restrictedEngine"] = args.restricted_provenance
+        metadata["modelIdentity"] = RESTRICTED_MODEL
+        metadata["chanceModel"] = {"model": "coupled_deck_v1", "latentStrengthSamples": 1024,
+                                  "seed": 90210, "jointPhysicalCardRemoval": False,
+                                  "pairwiseEquitySamplesPerClassPair": 20000,
+                                  "pairwiseEquitySeed": "class_i * 169 + class_j; pinned engine RNG",
+                                  "equityCacheSha256": sha256_file(args.engine_dir / "cache" / "preflop_eq169.bin")}
     if args.export_scope != "full":
         stem += "-" + args.export_scope
     quality_name = "approximate" if converged else "UNCONVERGED study"
+    if cfg.get("restricted_entry_k3_limp1"):
+        quality_name = "RESTRICTED K=3 / one-limp " + quality_name
     limp_name = "with limps" if args.limp else "no limps"
     dataset = {"schemaVersion": 2, "id": stem, "name": f"COMPUTED {quality_name} {players}-max 100 BB · max {args.max_raises} raises · {limp_name} · {args.export_scope}",
                "source": source, "game": {"players": players, "stackBb": 100, "anteBb": 0,
                "format": "cash", "rake": rake_label(cfg)}, "computation": metadata}
     files, qnodes = stream_tree_chunks(args.url, dataset, cfg, args.output, stem,
                                       args.max_export_nodes, args.shard_mb * 1_000_000, args.export_scope)
+    verify_restricted_payoffs(args)
     quick_path = args.output / f"{stem}.quick.json"
     if qnodes:
         quick = {"schemaVersion": 1, "id": stem + "-quick", "name": dataset["name"] + " · RFI/facing open",
@@ -706,6 +832,7 @@ def main():
     parser.add_argument("--target-gap", type=float, default=0.02)
     parser.add_argument("--max-raises", type=int, choices=range(1, 6), default=2)
     parser.add_argument("--limp", action="store_true")
+    parser.add_argument("--restricted-entry", action="store_true", help="Solve a distinct restricted-entry-k3-limp1-v1 game; requires the separately patched engine, --limp and --max-raises 4")
     parser.add_argument("--open-size", type=float, default=2.5)
     parser.add_argument("--threebet-multiplier", type=float, default=4)
     parser.add_argument("--fourbet-multiplier", type=float, default=3)
@@ -724,6 +851,7 @@ def main():
     modes.add_argument("--solve-only", action="store_true", help="Compute and save the engine snapshot; defer potentially large JSON exports")
     modes.add_argument("--export-only", action="store_true", help="Export the existing same-configuration session without additional solving")
     parser.add_argument("--engine-dir", type=Path, default=Path(".runtime/gtopen"))
+    parser.add_argument("--engine-binary", type=Path, help="Explicit compiled executable; defaults to engine-dir/target/release/gto-server")
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--memory-mb", type=int, default=4096)
     parser.add_argument("--node-cap", type=int, default=200000)
@@ -733,6 +861,8 @@ def main():
     args.restore_checkpoint = None
     if args.resume and (len(args.players) != 1 or args.players[0] == "all"):
         parser.error("Resume requires exactly one explicit player count")
+    if args.restricted_entry and (not args.start_server or (args.resume and not args.restore_save)):
+        parser.error("Restricted games require a fresh --start-server process. Replace live --resume/--export-only with --restore-save <v5.gtop> --start-server on an unused port")
     url = urllib.parse.urlsplit(args.url)
     if url.scheme != "http" or url.hostname not in ("127.0.0.1", "localhost", "::1") or url.username or url.password or url.path not in ("", "/") or url.query or url.fragment:
         parser.error("The adapter only permits a local HTTP solver; no project data is sent externally")
@@ -749,6 +879,9 @@ def main():
         parser.error("Threads must fit available logical CPUs; memory-mb in [128, 65536]; node-cap in [100, 10000000]")
     if not 0 <= args.target_gap or not 2 <= args.open_size <= 100 or min(args.threebet_multiplier, args.fourbet_multiplier) <= 1 or not 0 <= args.rake < 100 or args.rake_cap < 0:
         parser.error("Require target-gap >= 0; open-size 2..100 BB; raise multipliers > 1; rake 0..99%; rake-cap >= 0")
+    if args.restricted_entry and (not args.limp or args.max_raises != 4):
+        parser.error("The audited restricted-entry model requires --limp and --max-raises 4")
+    args.restricted_provenance = restricted_provenance(args)
     if (args.engine_dir / ".git").exists():
         actual_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=args.engine_dir, text=True).strip()
         if actual_commit != args.engine_commit:
@@ -758,45 +891,53 @@ def main():
             parser.error("Restore requires --start-server and the pinned local Git engine checkout")
         if not engine_executable(args).is_file():
             parser.error("Restore requires the already compiled local engine")
-        if subprocess.run(["git", "diff", "--quiet", "HEAD", "--", "crates", "Cargo.toml", "Cargo.lock"], cwd=args.engine_dir).returncode:
+        if not args.restricted_entry and subprocess.run(["git", "diff", "--quiet", "HEAD", "--", "crates", "Cargo.toml", "Cargo.lock"], cwd=args.engine_dir).returncode:
             parser.error("Restore requires unchanged engine source at the pinned revision")
         args.restore_checkpoint = prepare_restore(args, int(args.players[0]))
-    if args.start_server:
-        try:
-            request(args.url, "status", timeout=2)
-            if args.restore_save:
-                raise RuntimeError("Restore refuses an occupied server port; choose an unused local --url port")
-            print("Reusing the local solver; thread/memory/node settings remain those of its existing process.", flush=True)
-        except (urllib.error.URLError, TimeoutError):
-            engine_dir = args.engine_dir.resolve()
-            actual_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=engine_dir, text=True).strip()
-            if actual_commit != args.engine_commit:
-                raise RuntimeError(f"Engine revision {actual_commit} differs from --engine-commit; refusing misleading provenance")
-            executable = engine_executable(args)
-            if not executable.is_file():
-                raise RuntimeError(f"Build the separate engine first: cargo build --release -p server --locked -j 4 (in {engine_dir})")
-            env = {**os.environ, "PORT": str(url.port or 80), "SOLVER_THREADS": str(args.threads),
-                   "SOLVER_GPU": "0", "SOLVER_MEM_MB": str(args.memory_mb),
-                   "PREFLOP_MAX_ARENA_MB": str(args.memory_mb), "PREFLOP_MAX_NODES": str(args.node_cap)}
-            args.output.mkdir(parents=True, exist_ok=True)
-            with (args.output / "engine.stdout.log").open("ab") as out, (args.output / "engine.stderr.log").open("ab") as err:
-                process = subprocess.Popen([str(executable)], cwd=engine_dir, env=env, stdout=out, stderr=err,
-                                           creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-            args.started_server = True
-            (args.output / "engine.pid").write_text(str(process.pid), encoding="ascii")
-            for _ in range(30):
-                if process.poll() is not None:
-                    raise RuntimeError("Local engine exited; inspect engine.stderr.log")
-                try:
-                    request(args.url, "status", timeout=1)
-                    break
-                except (urllib.error.URLError, TimeoutError):
-                    time.sleep(0.2)
-            else:
-                raise RuntimeError("Local engine did not become ready")
-    players = list(POSITIONS) if "all" in args.players else list(dict.fromkeys(map(int, args.players)))
-    for player_count in players:
-        run(args, player_count)
+    owned_process = None
+    try:
+        if args.start_server:
+            try:
+                request(args.url, "status", timeout=2)
+                if args.restore_save or args.restricted_entry:
+                    raise RuntimeError("Restore refuses an occupied server port; choose an unused local --url port")
+                print("Reusing the local solver; thread/memory/node settings remain those of its existing process.", flush=True)
+            except (urllib.error.URLError, TimeoutError):
+                engine_dir = args.engine_dir.resolve()
+                actual_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=engine_dir, text=True).strip()
+                if actual_commit != args.engine_commit:
+                    raise RuntimeError(f"Engine revision {actual_commit} differs from --engine-commit; refusing misleading provenance")
+                executable = engine_executable(args)
+                if not executable.is_file():
+                    raise RuntimeError(f"Build the separate engine first: cargo build --release -p server --locked -j 4 (in {engine_dir})")
+                env = {**os.environ, "PORT": str(url.port or 80), "SOLVER_THREADS": str(args.threads),
+                       "SOLVER_GPU": "0", "SOLVER_MEM_MB": str(args.memory_mb),
+                       "PREFLOP_MAX_ARENA_MB": str(args.memory_mb), "PREFLOP_MAX_NODES": str(args.node_cap)}
+                if args.restricted_entry:
+                    # Even an explicitly empty inherited override is removed.
+                    env.pop("REALIZATION_FIT", None)
+                args.output.mkdir(parents=True, exist_ok=True)
+                with (args.output / "engine.stdout.log").open("ab") as out, (args.output / "engine.stderr.log").open("ab") as err:
+                    process = subprocess.Popen([str(executable)], cwd=engine_dir, env=env, stdout=out, stderr=err,
+                                               creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                owned_process = process
+                args.started_server = True
+                (args.output / "engine.pid").write_text(str(process.pid), encoding="ascii")
+                for _ in range(30):
+                    if process.poll() is not None:
+                        raise RuntimeError("Local engine exited; inspect engine.stderr.log")
+                    try:
+                        request(args.url, "status", timeout=1)
+                        break
+                    except (urllib.error.URLError, TimeoutError):
+                        time.sleep(0.2)
+                else:
+                    raise RuntimeError("Local engine did not become ready")
+        players = list(POSITIONS) if "all" in args.players else list(dict.fromkeys(map(int, args.players)))
+        for player_count in players:
+            run(args, player_count)
+    finally:
+        cleanup_owned_restricted_process(args, owned_process)
 
 
 if __name__ == "__main__":

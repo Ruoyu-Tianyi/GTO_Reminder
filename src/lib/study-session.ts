@@ -91,7 +91,7 @@ function validateSource(value: unknown): StudyDatasetBinding['source'] {
   if (source.kind === 'computed') {
     const computation = object(raw.computation, ['engine', 'model', 'iterations', 'status', 'scope', 'tree', 'modelGapBb'], 'source.computation');
     text(computation.engine, 'computation.engine', 4096); text(computation.model, 'computation.model', 4096); text(computation.scope, 'computation.scope', 4096);
-    if (computation.tree !== undefined) object(computation.tree, ['openSizeBb', 'threeBetSizeBb', 'fourBetSizeBb', 'maxRaises', 'limp', 'limpRaiseBb'], 'computation.tree');
+    if (computation.tree !== undefined) object(computation.tree, ['openSizeBb', 'threeBetSizeBb', 'fourBetSizeBb', 'maxRaises', 'limp', 'limpRaiseBb', 'model', 'maxVoluntaryContributors', 'maxUnopenedLimps'], 'computation.tree');
     source.computation = validateComputation(computation);
   } else if (raw.computation !== undefined) throw new Error('Only computed sources may declare computation metadata.');
   return source;

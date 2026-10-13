@@ -65,15 +65,65 @@ GTOpen 的[技术说明](https://github.com/MatthewPDingle/GTOpen/blob/b69ea07c7
 
 2026-10-13 另补 9 人无 Limp、最多三次加注的研究树：875,521 个总节点 / 428,430 个决策，8 轮合计 554.75 秒，导出标准线 284 个决策 / 44 个 Quick 节点，完整存档 1,183,703,763 字节。追加一轮后尝试测量最终差距，但测量未在时限内完成，因此 `modelGapBb=null` 且仍标 `UNCONVERGED`。它覆盖 36 组 Facing 4-bet，但该层只允许 Fold/Call，5-bet/jam 被排除，不能解释为完整游戏只有这两种最优动作。没有导出其完整多人深树。
 
-6 人深树覆盖工作台全部 9 个现有预设；7 人深树覆盖除两项 limp 预设外的 7 个；9 人 max3 覆盖除两项 limp 和 Facing 5-bet 外的 6 个。当前目录共 **64 个计算数据文件、27,914 个树决策、212 个 Quick 节点**，全部通过项目结构、169 手牌、条件频率、历史与候选下注合法性验证；同一模型分片没有重复历史或 ID。验证与预设匹配明细在 `data/private/solver-audits/validation-and-coverage.json`。包装器现有 18 个离线单元测试也通过。Quick 仍只导出其 v1 格式能表达的 RFI / Facing Open；深层条件策略在完整历史工作台中查看。
+6 人深树覆盖工作台全部 9 个现有预设；7 人深树覆盖除两项 limp 预设外的 7 个；9 人 max3 覆盖除两项 limp 和 Facing 5-bet 外的 6 个。新增下节受限模型之前，目录共 **64 个计算数据文件、27,914 个树决策、212 个 Quick 节点**，全部通过项目结构、169 手牌、条件频率、历史与候选下注合法性验证；同一模型分片没有重复历史或 ID。当时包装器的 18 个离线单元测试也通过。最新全库统计在 `data/private/solver-audits/validation-and-coverage.json`。Quick 仍只导出其 v1 格式能表达的 RFI / Facing Open；深层条件策略在完整历史工作台中查看。
+
+### 三人入池上限模型（2026-10-13）
+
+为计算 6–9 人的全部标准位置对局，本轮增加独立的 `restricted-entry-k3-limp1-v1` 游戏。所有座位仍在桌上，盲注和行动顺序不变，但**整段历史最多三名玩家可以主动投入筹码**：已经跟注或加注、后来又弃牌的玩家仍占一个名额，盲注、Ante、免费 Check 不占名额。名额用完后尚未入池者面对下注只能 Fold；免费 Check 仍保留。首次加注前最多允许一次 Limp，不允许第二人 Overlimp。此限制直接参与求解，改变前序策略；它与单纯筛选导出路径不同，不能当作原始 6–9 人无限入池游戏的解。
+
+固定条件为 100 BB、无 Ante、5% 抽水 / 2.5 BB cap / no flop no drop，2.5 / 10 / 30 / 100 BB，允许一次未加注 Limp，最多四次加注。近似后续价值与抽象多人发牌模型沿用前述边界。导出仍采用 `heads-up-lines`，仅提供历史中至多两名主动投入筹码玩家的标准行动线；求解时允许第三名玩家进入。未导出的三人分支不计为覆盖。
+
+| 人数 | 受限游戏总节点 | 决策节点 |
+| --- | ---: | ---: |
+| 6 | 5,286 | 2,230 |
+| 7 | 9,168 | 3,905 |
+| 8 | 14,610 | 6,279 |
+| 9 | 21,889 | 9,488 |
+
+本轮实际结果如下。计时为求解与质量检查的累计时间，不含编译、存档核对和导出。四包均达到 `0.02 BB/hand` 的模型内部目标，仍不是完整 NLHE GTO。
+
+| 人数 | 最终轮数 | 累计秒数 | 最终模型差值（BB/hand） | 已导出决策 / Quick | 标准类别 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 6 | 240 | 41.594 | 0.0195955362 | 200 / 15 | 67 / 67 |
+| 7 | 340 | 101.406 | 0.0169807343 | 300 / 21 | 92 / 92 |
+| 8 | 340 | 149.141 | 0.0192853401 | 427 / 28 | 121 / 121 |
+| 9 | 430 | 275.563 | 0.0196597231 | 584 / 36 | 154 / 154 |
+
+8 人先到第 320 轮，核验 v5 存档与收益输入后重启续算至 340；9 人先到第 210 轮，同样重启续算至 430。最终 gap 均在最终迭代测得，保留累计时间、原检查点和恢复记录。共新增 1,511 个决策、100 个 Quick 节点、6 个树分片与 4 个 Quick 文件，255,359 条树手牌记录均有频率，没有 missing 或 unreachable。全部标准分类都有记录；导出范围之外仍分别省略 120／210／336／504 条分支，不称为全树导出。
+
+这是新的、较小的游戏；节点减少不代表完整游戏的算法加速。所有计算包使用不同 ID，原基础树、深树、引擎及存档保持独立。页面显式展示入池限制，数据导入检查历史和当前动作菜单的三人名额及一次 Limp 限制，收藏也保存这一模型身份。
+
+项目仅记录本地修改补丁和文件摘要，源码仍由用户从固定的上游 revision 单独获取。原 `.runtime/gtopen/` 不适用于这个补丁，使用新的 `.runtime/gtopen-restricted/`。补丁脚本拒绝覆盖未知源码或缓存；构建后记录源码、补丁及可执行文件摘要，运行包装器会核对这些记录。新存档使用 `GTOPREFLOP5`，避免旧引擎误读为原游戏；原模型继续使用 v4。五项 Rust 回归覆盖节点估计与实际树、参与名额、Limp、配置兼容及存档身份。
+
+从未创建过该目录的电脑可按下列命令获取和构建；需要下节列出的工具链。已有目录应先核对内容，不能重复 Clone 覆盖。构建步骤不运行正式策略求解。
+
+```powershell
+git clone -c core.autocrlf=false --filter=blob:none --sparse https://github.com/MatthewPDingle/GTOpen.git .runtime/gtopen-restricted
+git -C .runtime/gtopen-restricted sparse-checkout set crates cache web research/ignition-reraise research/preflop-evolution/behavior/pass3
+git -C .runtime/gtopen-restricted fetch --depth 1 origin b69ea07c79884fc598757dc45c712e73976db810
+git -C .runtime/gtopen-restricted checkout --detach b69ea07c79884fc598757dc45c712e73976db810
+python scripts/apply-local-solver-patch.py --build
+```
+
+Clone 显式关闭自动换行转换，以保留校准文件的上游原始字节。已有独立目录的校准文件若因换行转换而与固定版本不符，也会拒绝计算；先保存需要保留的文件，再使用新的独立目录按上述步骤获取，不要覆盖来源不明的校准文件。
+
+如果有原引擎的 20,000 样本 pairwise equity 缓存，可以在最后一条追加 `--equity-cache .runtime/gtopen/cache/preflop_eq169.bin`。没有缓存时，引擎自行生成；该步骤可能额外耗时。下列命令展示相同游戏的计算与标准线导出，轮数和时限是每个人数的上限，不是收敛承诺。
+
+```powershell
+python scripts/solve-local-preflop.py --engine-dir .runtime/gtopen-restricted --restricted-entry --start-server --url http://127.0.0.1:3741 --players all --max-raises 4 --limp --iterations 200 --seconds 180 --threads 8 --memory-mb 4096 --node-cap 50000 --export-scope heads-up-lines --shard-mb 16
+```
+
+恢复时仍须使用同一个独立引擎目录和 `--restricted-entry --limp --max-raises 4`。受限模型每次调用必须在空端口启动独立进程；跨调用采用 `--restore-save` 磁盘恢复，不接受复用已有 HTTP 服务或实时 `--resume`。同一次 `--players all` 内可以连续计算各人数。调用结束或异常退出时，包装器关闭本次自己启动的受限引擎并释放端口；不关闭其他进程，普通 v4 模式继续保留原有实时续算行为。
+
+v5 路径还固定默认的收益校准文件，拒绝 `REALIZATION_FIT` 环境覆盖，并绑定校准文件和权益缓存的 SHA-256。恢复时这些输入、源码、补丁、二进制、配置及存档都必须一致；缺少收益输入指纹的 v5 侧车默认拒绝，不以当前文件为过去的计算补造证据。本轮初次生成的四份快照另有仅针对其具体存档和已知收益输入的私人迁移审计，不提供通用跳过校验选项。实际每包轮数、最终 gap、时间及标准场景清单由本次审计记录，不根据历史检查点补造收敛状态。
 
 ## 换电脑重现
 
 需要 Python 3、Git、Rust MSVC 工具链以及 Visual Studio C++ Build Tools。先按 GTOpen 官方 README 安装其工具链，不需要安装 GPU 组件。以下从本项目目录执行；如果目录已经存在，不要再次 clone 或覆盖。
 
 ```powershell
-git clone --filter=blob:none --sparse https://github.com/MatthewPDingle/GTOpen.git .runtime/gtopen
-git -C .runtime/gtopen sparse-checkout set crates cache web
+git clone -c core.autocrlf=false --filter=blob:none --sparse https://github.com/MatthewPDingle/GTOpen.git .runtime/gtopen
+git -C .runtime/gtopen sparse-checkout set crates cache web research/ignition-reraise research/preflop-evolution/behavior/pass3
 git -C .runtime/gtopen fetch --depth 1 origin b69ea07c79884fc598757dc45c712e73976db810
 git -C .runtime/gtopen checkout --detach b69ea07c79884fc598757dc45c712e73976db810
 cargo build --manifest-path .runtime/gtopen/Cargo.toml --release -p server --locked -j 4
@@ -111,6 +161,8 @@ python scripts/solve-local-preflop.py --url http://127.0.0.1:3753 --players 7 --
 - 保存或重新计算前也会核查已存在的同名存档，避免覆盖配置、版本或校验不符的数据。`--restore-save ... --export-only` 不重写原始 `.gtop`，仅建立恢复侧车及所请求的导出/审计文件。
 
 换电脑续算需要自行携带 `.gtop`、对应 `.resume.json`（若已有）及原审计，并满足上述引擎检验。普通前端数据 ZIP 不包含这些大存档。仅查询已有策略无需安装或运行求解器。
+
+**旧 v4 恢复的额外边界：**其历史记录未绑定实际收益校准文件和权益缓存的摘要。源码、二进制与配置一致，仍不足以证明这两个外部收益输入与保存时一致。不要更换校准文件、权益缓存或 `REALIZATION_FIT` 后接续旧 CFR；也不能仅依据当前文件为旧存档补造收益指纹。要求完整输入可核验的跨机续算，应采用上文有收益指纹的独立 v5 受限模型路径。这一限制不影响已导出策略 JSON 的校验迁移和查询。
 
 验证结果：包装器现有 **18 项离线回归**通过，覆盖错误路径、配置/版本/迭代不匹配、point locks、截断与损坏存档、二进制变化、占用会话拒绝、旧误差不冒充最终误差、scoped 审计接续和限定树说明。本机另以独立临时目录验证了两条真实路径：恢复既有 6 人基础第 30 轮存档并仅导出 1 个节点，原存档字节及正式审计不变；建立 6 人 2.6 BB、max1 的微型测试树，算 1 轮后关闭引擎，再从存档启动并续算至第 2 轮，保留两轮检查点及累计耗时。仅测试进程被关闭，测试文件位于忽略的 `.runtime/`，没有加入正式数据目录。
 

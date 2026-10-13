@@ -62,6 +62,10 @@ export interface ComputationTree {
   maxRaises: number; limp: boolean;
   /** First raise-to after an unopened limp; not the size of the limp itself. */
   limpRaiseBb?: number;
+  /** Different solved game: later entries/limps are explicitly excluded, not filtered exports. */
+  model?: 'restricted-entry-k3-limp1-v1';
+  maxVoluntaryContributors?: 3;
+  maxUnopenedLimps?: 1;
 }
 
 export function validateComputation(value: unknown): ComputationInfo {
@@ -80,6 +84,12 @@ export function validateComputation(value: unknown): ComputationInfo {
     }
     const limpRaiseBb = input.limpRaiseBb === undefined ? undefined : finiteNumber(input.limpRaiseBb, 'computation.tree.limpRaiseBb', 2);
     tree = { openSizeBb, threeBetSizeBb, fourBetSizeBb, maxRaises, limp: input.limp, ...(limpRaiseBb === undefined ? {} : { limpRaiseBb }) };
+    if (input.model !== undefined || input.maxVoluntaryContributors !== undefined || input.maxUnopenedLimps !== undefined) {
+      if (input.model !== 'restricted-entry-k3-limp1-v1' || input.maxVoluntaryContributors !== 3 || input.maxUnopenedLimps !== 1) {
+        throw new Error('Restricted-entry trees require the recognized model and explicit contributor/limp limits 3/1.');
+      }
+      tree.model = input.model; tree.maxVoluntaryContributors = 3; tree.maxUnopenedLimps = 1;
+    }
   }
   const modelGapBb = raw.modelGapBb === undefined || raw.modelGapBb === null ? raw.modelGapBb : finiteNumber(raw.modelGapBb, 'computation.modelGapBb', 0);
   return { engine: requiredText(raw.engine, 'computation.engine'), model: requiredText(raw.model, 'computation.model'), iterations,

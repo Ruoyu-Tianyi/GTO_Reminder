@@ -161,4 +161,28 @@ describe('source-aware data inventory', () => {
     expect(inventory.byPlayers[1].local?.bySource.computed.modelPacks).toBe(1);
     expect(JSON.stringify(input)).toBe(snapshot);
   });
+
+  it('uses optional cached standard metadata and treats legacy summaries as unaudited', () => {
+    const legacy = buildDataInventory({ ...empty, treeLibrary: [tree()] });
+    expect(legacy.standard.unknownTreeEntries).toBe(1);
+    expect(legacy.standard.totals.missing).toBeNull();
+    const audited = tree();
+    audited.standardSpots = [{ key: '7:rfi:UTG:-', players: 7, kind: 'rfi', hero: 'UTG', villain: null, history: [], availableHands: 100, unreachableHands: 60, missingHands: 9 }];
+    const report = buildDataInventory({ ...empty, treeLibrary: [audited] }).standard;
+    expect(report.totals).toMatchObject({ readable: 1, resolved: 0, computed: 1, missing: 433 });
+    expect(report.byPlayers[1].counts.readable).toBe(1);
+    expect(report.cases.find(spot => spot.key === '7:rfi:UTG:-')?.evidence[0].datasetId).toBe(audited.id);
+  });
+
+  it('keeps standard gaps unknown when a successful API excluded invalid files', () => {
+    expect(buildDataInventory({ ...empty, localIncomplete: true }).standard.totals.missing).toBeNull();
+    expect(buildDataInventory(empty).standard.totals.missing).toBe(434);
+  });
+
+  it('retains known source evidence as a lower bound when another reference API fails', () => {
+    const report = buildDataInventory({ ...empty, publishedCharts: [published()], referenceRanges: null });
+    expect(report.totals.references).toBeNull();
+    expect(report.standard.totals).toMatchObject({ readable: 1, original: 1, missing: null });
+    expect(report.standard.complete).toBe(false);
+  });
 });

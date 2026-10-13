@@ -1,0 +1,3 @@
+# Reproducible third-party engine patches are byte-hashed in their manifests.
+# A unified diff's empty context lines contain one required space.
+patches/*.patch text eol=lf whitespace=-blank-at-eol

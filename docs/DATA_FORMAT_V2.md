@@ -16,6 +16,8 @@ v2 支持 6–9 人 NLHE Cash，SB 0.5 BB / BB 1 BB、每人相同 ante、各位
 | `source.computation` | `computed` 必填：非空 `engine`、`model`、`scope`，非负整数 `iterations`，`status` 为 `approximate` 或 `unconverged` |
 | `source.computation.tree` | 可选固定模型尺寸：`openSizeBb`、`threeBetSizeBb`、`fourBetSizeBb`（累计 Raise-to、不含 ante、有限且至少 2、非递减），`maxRaises` 整数 1–5，`limp` 布尔值；可选 `limpRaiseBb` 明确无人加注但有人 Limp 后的首次 Raise-to。相同后续尺寸可作为终止全下的未使用占位，实际示例仍须通过合法行动回放 |
 | `source.computation.modelGapBb` | 可选最终快照的模型最佳响应差：有限非负数或未测量时的 `null`，不代表真实游戏 exploitability |
+
+受限参与模型额外声明 `computation.tree.model: "restricted-entry-k3-limp1-v1"`，并同时要求 `maxVoluntaryContributors: 3` 与 `maxUnopenedLimps: 1`。这三个字段须成组出现，不能从来源描述中猜测。该模型对整段历史累计曾主动投入的玩家计数，已经弃牌的参与者仍占用名额；强制盲注不计入。达到三人后新的参与者不能跟注或加注；第一次 Raise 前最多一次 Limp。它与仅对完整模型的输出做 `heads-up-lines` 筛选不同，限制实际改变求解树。来源身份与收藏须保留这些字段，界面在频率上方说明限制。
 | `game.players` | 整数 6–9 |
 | `game.stackBb` | 默认起始筹码 |
 | `game.stacksBb` | 可选位置覆盖，例如 `{ "SB": 40, "BB": 100 }` |

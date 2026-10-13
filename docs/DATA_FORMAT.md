@@ -82,6 +82,14 @@ raise counts and undeclared limp-raise sizes. Optional `modelGapBb` is a finite,
 nonnegative final-snapshot **model** gap, or `null` when unmeasured. It is not
 real-game exploitability. Quick/history snapshot matching includes these fields.
 
+The optional restricted-entry variant must preserve all three tree fields:
+`model: "restricted-entry-k3-limp1-v1"`, `maxVoluntaryContributors: 3`, and
+`maxUnopenedLimps: 1`. They identify a different solved game: at most three
+players may ever contribute voluntarily, including players who later fold;
+forced blinds do not count, and only one call before the first raise is allowed.
+It is not merely a filtered export of the original full-participation game.
+The source notice must expose this limitation and bookmarks must retain it.
+
 The verified baseline as of 2026-10-03 has four locally computed quick-lookup files with **126** v1
 nodes: 6/7/8/9 players have 20/27/35/44 RFI and Facing Open nodes respectively.
 They use Cash 100 BB, no ante, 5% rake capped at 2.5 BB, no flop no drop, 2.5 BB

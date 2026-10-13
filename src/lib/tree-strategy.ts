@@ -54,6 +54,36 @@ export function historyKey(history: readonly PreflopAction[]): string {
   return JSON.stringify(history.map(item => [item.actor, item.type, item.type === 'raise' ? item.amountBb : null]));
 }
 
+interface RestrictedEntryState {
+  contributors: Set<Position>;
+  unopenedLimps: number;
+  raised: boolean;
+}
+
+/** Called only after poker replay: a legal Call always contributes positive chips. */
+function validateRestrictedEntryAction(state: RestrictedEntryState, action: PreflopAction, path: string): void {
+  if (action.type !== 'call' && action.type !== 'raise') return;
+  if (!state.contributors.has(action.actor) && state.contributors.size >= 3) {
+    throw new Error(`${path}: restricted-entry-k3-limp1-v1 allows at most 3 voluntary contributors; earlier contributors still count after folding.`);
+  }
+  if (action.type === 'call' && !state.raised && state.unopenedLimps >= 1) {
+    throw new Error(`${path}: restricted-entry-k3-limp1-v1 allows at most 1 unopened limp.`);
+  }
+}
+
+function restrictedEntryHistory(history: readonly PreflopAction[], path: string): RestrictedEntryState {
+  // Count actions, not current live seats or blind commitments. This scan is
+  // linear and reuses the legality already established by replayPreflop.
+  const state: RestrictedEntryState = { contributors: new Set(), unopenedLimps: 0, raised: false };
+  history.forEach((action, index) => {
+    validateRestrictedEntryAction(state, action, `${path}[${index}]`);
+    if (action.type === 'call' || action.type === 'raise') state.contributors.add(action.actor);
+    if (action.type === 'raise') state.raised = true;
+    else if (action.type === 'call' && !state.raised) state.unopenedLimps += 1;
+  });
+  return state;
+}
+
 /** Import validation establishes legal structure, never solver accuracy. */
 export function validateTreeDataset(value: unknown): TreeDataset {
   const raw = object(value, 'Dataset');
@@ -98,6 +128,8 @@ export function validateTreeDataset(value: unknown): TreeDataset {
     histories.add(key);
     const state = replayPreflop(game, history);
     if (!state.nextActor || state.terminal) throw new Error(`${path}: a terminal hand has no preflop decision.`);
+    const restricted = computation?.tree?.model === 'restricted-entry-k3-limp1-v1'
+      ? restrictedEntryHistory(history, `${path}.history`) : undefined;
     if (!Array.isArray(node.actions) || !node.actions.length || node.actions.length > 30) throw new Error(`${path}.actions must contain 1 to 30 choices.`);
     const actionIds = new Set<string>();
     const actionKeys = new Set<string>();
@@ -109,7 +141,9 @@ export function validateTreeDataset(value: unknown): TreeDataset {
       const choiceKey = JSON.stringify(choice);
       if (actionKeys.has(choiceKey)) throw new Error(`${path}: duplicate action or raise size.`);
       actionIds.add(choiceId); actionKeys.add(choiceKey);
-      replayPreflop(game, [...history, { actor: state.nextActor!, ...choice }]);
+      const nextAction = { actor: state.nextActor!, ...choice };
+      replayPreflop(game, [...history, nextAction]);
+      if (restricted) validateRestrictedEntryAction(restricted, nextAction, `${path}.actions[${choiceIndex}]`);
       return { id: choiceId, ...choice };
     });
     const rawHands = object(node.hands, `${path}.hands`);

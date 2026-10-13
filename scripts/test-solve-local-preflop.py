@@ -7,13 +7,14 @@ import importlib.util
 import io
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.dont_write_bytecode = True
 SCRIPT = Path(__file__).with_name('solve-local-preflop.py')
@@ -361,6 +362,149 @@ class RestoreTests(unittest.TestCase):
         self.assertIn('Facing the last 4-bet, only Fold/Call', boundary)
         self.assertIn('5-bet and further jam options are excluded', boundary)
         self.assertIn('not established as strategically inferior', boundary)
+
+    def test_restricted_identity_parameters_and_source_disclosure_are_distinct(self):
+        ordinary = adapter.config_for(options(limp=True, max_raises=4), 9)
+        restricted = adapter.config_for(options(limp=True, max_raises=4, restricted_entry=True), 9)
+        self.assertNotIn('restricted_entry_k3_limp1', ordinary)
+        self.assertTrue(restricted['restricted_entry_k3_limp1'])
+        self.assertNotEqual(adapter.study_stem(ordinary, 9), adapter.study_stem(restricted, 9))
+        tree = adapter.tree_parameters(restricted)
+        self.assertEqual((tree['model'], tree['maxVoluntaryContributors'], tree['maxUnopenedLimps']),
+                         ('restricted-entry-k3-limp1-v1', 3, 1))
+        self.assertIn('forced to Fold', adapter.restriction_note(restricted))
+        self.assertIn('including contributors that later fold', adapter.restriction_note(restricted))
+        self.assertEqual(adapter.restriction_note(ordinary), '')
+        with self.assertRaises(RuntimeError):
+            adapter.validate_standard_config(ordinary, restricted)
+        with self.assertRaises(RuntimeError):
+            adapter.validate_standard_config(restricted, ordinary)
+
+    def test_restricted_save_format_and_engine_binary_are_bound_to_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args, ordinary, path, header, _, _ = self.fixture(directory)
+            restricted = {**ordinary, 'restricted_entry_k3_limp1': True}
+            with self.assertRaisesRegex(RuntimeError, 'save format'):
+                adapter.inspect_save(path, restricted)
+            raw = path.read_bytes()
+            end = raw.index(b'\n', 12)
+            restricted_header = json.loads(raw[12:end])
+            restricted_header['config'] = restricted
+            path.write_bytes(b'GTOPREFLOP5\n' + json.dumps(restricted_header).encode() + raw[end:])
+            self.assertEqual(adapter.inspect_save(path, restricted)['iteration'], 20)
+            with self.assertRaisesRegex(RuntimeError, 'save format'):
+                adapter.inspect_save(path, ordinary)
+            explicit = Path(directory) / 'separate-engine.exe'
+            args.engine_binary = explicit
+            self.assertEqual(adapter.engine_executable(args), explicit.resolve())
+
+    def test_restricted_run_rejects_old_engine_ignoring_config_before_solving(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            args = options(restricted_entry=True, limp=True, max_raises=4,
+                           output=output, audit_output=output / 'audits', export_only=False, started_server=True)
+            actual = adapter.config_for(options(limp=True, max_raises=4), 9)
+            seen = []
+            def request(base, endpoint, body=None):
+                seen.append(endpoint)
+                if endpoint == 'status': return {'state': ''}
+                if endpoint == 'estimate': return {'ok': True}
+                if endpoint == 'spot': return {}
+                if endpoint == 'session': return {'config': actual}
+                self.fail('Unverified engine must never solve, save or export')
+            with patch.object(adapter, 'request', request), redirect_stdout(io.StringIO()), self.assertRaises(RuntimeError):
+                adapter.run(args, 9)
+            self.assertNotIn('solve', seen)
+
+    def test_restricted_payoffs_reject_override_changed_fit_cache_and_missing_old_fingerprints(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            root = Path(directory)
+            (root / 'cache').mkdir()
+            fit = root / 'cache' / 'realization_fit.json'
+            fit.write_bytes(b'{"knownPinnedCalibration":true}')
+            equity = root / 'cache' / 'preflop_eq169.bin'
+            equity.write_bytes(struct.pack('<I', 20000) + bytes(169 * 169 * 4))
+            args = options(engine_dir=root, restricted_entry=True)
+            with patch.object(adapter.subprocess, 'check_output', return_value=fit.read_bytes()):
+                inputs = adapter.restricted_payoff_inputs(args)
+                args.restricted_provenance = {'payoffInputs': inputs}
+                adapter.verify_restricted_payoffs(args)
+                audit = {'restrictedEngine': {'payoffInputs': inputs}}
+                config = adapter.config_for(args, 6)
+                adapter.validate_restricted_restore_inputs(args, audit, config)
+                for broken in ({}, {'restrictedEngine': {}}, {'restrictedEngine': {'payoffInputs': {**inputs, 'equityCacheSha256': 'other'}}}):
+                    with self.subTest(audit=broken), self.assertRaisesRegex(RuntimeError, 'fingerprints'):
+                        adapter.validate_restricted_restore_inputs(args, broken, config)
+                with patch.dict(os.environ, {'REALIZATION_FIT': 'different-valid-fit.json'}), self.assertRaisesRegex(RuntimeError, 'overrides'):
+                    adapter.restricted_payoff_inputs(args)
+                fit.write_bytes(b'{"differentButValid":true}')
+                with self.assertRaisesRegex(RuntimeError, 'pinned default'):
+                    adapter.restricted_payoff_inputs(args)
+                fit.write_bytes(b'{"knownPinnedCalibration":true}')
+                # Same sample header, byte length, config and binary; altered
+                # equity values must still invalidate the continuation model.
+                changed = bytearray(equity.read_bytes()); changed[7] = 1; equity.write_bytes(changed)
+                with self.assertRaisesRegex(RuntimeError, 'changed during'):
+                    adapter.verify_restricted_payoffs(args)
+
+    def test_restricted_first_cache_is_bound_after_generation_but_never_rebound(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            root=Path(directory); (root/'cache').mkdir()
+            (root/'cache'/'realization_fit.json').write_bytes(b'{}')
+            args=options(engine_dir=root,restricted_entry=True)
+            with patch.object(adapter.subprocess,'check_output',return_value=b'{}'):
+                initial=adapter.restricted_payoff_inputs(args,allow_missing_equity=True)
+                self.assertIsNone(initial['equityCacheSha256'])
+                args.restricted_provenance={'payoffInputs':initial}
+                with self.assertRaisesRegex(RuntimeError,'missing'):
+                    adapter.verify_restricted_payoffs(args)
+                (root/'cache'/'preflop_eq169.bin').write_bytes(struct.pack('<I',20000)+bytes(169*169*4))
+                adapter.verify_restricted_payoffs(args,allow_initial_cache=True)
+                self.assertIsNotNone(args.restricted_provenance['payoffInputs']['equityCacheSha256'])
+                adapter.verify_restricted_payoffs(args)
+
+    def test_restricted_live_server_is_rejected_before_any_http_or_model_assumption(self):
+        args=options(restricted_entry=True,started_server=False)
+        with patch.object(adapter,'request') as request, self.assertRaisesRegex(RuntimeError,'fresh dedicated'):
+            adapter.run(args,9)
+        request.assert_not_called()
+
+    def test_restricted_cleanup_only_owns_its_popen_and_bounds_shutdown_wait(self):
+        process=Mock(); process.poll.return_value=None
+        adapter.cleanup_owned_restricted_process(options(), process)
+        process.terminate.assert_not_called()
+        adapter.cleanup_owned_restricted_process(options(restricted_entry=True), None)
+        adapter.cleanup_owned_restricted_process(options(restricted_entry=True), process)
+        process.terminate.assert_called_once(); process.wait.assert_called_once_with(timeout=2)
+        process.kill.assert_not_called()
+        process.reset_mock(); process.poll.return_value=0
+        adapter.cleanup_owned_restricted_process(options(restricted_entry=True), process)
+        process.terminate.assert_not_called()
+        process.poll.return_value=None
+        process.wait.side_effect=[adapter.subprocess.TimeoutExpired('owned-engine',2),0]
+        adapter.cleanup_owned_restricted_process(options(restricted_entry=True), process)
+        process.kill.assert_called_once()
+
+    def test_restricted_main_cleans_created_engine_on_success_and_failure(self):
+        for failure in (False, True):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory); binary=root/'engine.exe'; binary.write_bytes(b'fixture')
+                process=Mock(pid=123);process.poll.return_value=None
+                argv=['solver','--players','6','--restricted-entry','--limp','--max-raises','4',
+                      '--start-server','--engine-dir',str(root),'--engine-binary',str(binary),
+                      '--threads','1','--output',str(root/'output')]
+                def fake_request(*args,**kwargs):
+                    if kwargs.get('timeout')==2: raise adapter.urllib.error.URLError('absent')
+                    return {}
+                with patch.object(sys,'argv',argv), patch.object(adapter,'restricted_provenance',return_value={}), \
+                     patch.object(adapter.subprocess,'check_output',return_value=adapter.PINNED_COMMIT), \
+                     patch.object(adapter.subprocess,'Popen',return_value=process), \
+                     patch.object(adapter,'request',fake_request), \
+                     patch.object(adapter,'run',side_effect=RuntimeError('synthetic solve failure') if failure else None):
+                    if failure:
+                        with self.assertRaisesRegex(RuntimeError,'synthetic solve failure'): adapter.main()
+                    else: adapter.main()
+                process.terminate.assert_called_once();process.wait.assert_called_once_with(timeout=2)
 
 
 if __name__ == '__main__':

@@ -11,6 +11,7 @@ import QuickTreeLookup from './QuickTreeLookup';
 import StudyLibrary from './StudyLibrary';
 import { addStudyBookmark, emptyStudyCollection, loadStudyStorage, saveStudyStorage, type StudyCollection, type StudyQuery } from './lib/study-session';
 import { bindStudyDataset, matchesStudyDataset } from './lib/study-bindings';
+import type { PreflopAction } from './lib/preflop';
 import { HANDS, comboCount, findNode, getPositions, getVillains, normalizeHand, rangeSummary, validateDataset, type Dataset, type Position, type Spot, type SpotKind } from './lib/poker';
 
 const INITIAL_SPOT: Spot = { players: 6, hero: 'BTN', villain: null, stackBb: 100, kind: 'rfi', openSizeBb: 2.5, threeBetSizeBb: 10, fourBetSizeBb: 22, format: 'cash', anteBb: 0, rake: '5% · 3 BB cap' };
@@ -160,7 +161,7 @@ export default function App() {
       {studyError && workspaceMode !== 'study' && <p className="study-notice" role="alert">{t('Bookmarks are available in memory only. Open Saved spots and export them to keep a copy.', '收藏目前仅在内存中可用，请打开“我的收藏”导出备份。')}</p>}
       <div hidden={workspaceMode !== 'published'}><PublishedCharts key={rangeRequest?.version ?? 0} initialSelection={rangeRequest?.selection} initialStudy={rangeRequest?.study} onSave={saveStudy} t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
       <div hidden={workspaceMode !== 'history'}><TreeWorkspace openRequest={treeRequest} onSave={saveStudy} t={t} onReference={(id, page) => { setReferenceSelection({ id, page }); setModal('references'); }}/></div>
-      {workspaceMode === 'inventory' && <DataInventory t={t} onReference={selection => { setRangeRequest(current => ({ selection, version: (current?.version ?? 0) + 1 })); setWorkspaceMode('published'); }} onTree={id => { setTreeRequest(current => ({ id, version: (current?.version ?? 0) + 1 })); setWorkspaceMode('history'); }}/>}
+      {workspaceMode === 'inventory' && <DataInventory t={t} onReference={selection => { setRangeRequest(current => ({ selection, version: (current?.version ?? 0) + 1 })); setWorkspaceMode('published'); }} onTree={(id, history?: PreflopAction[]) => { setTreeRequest(current => ({ id, history, version: (current?.version ?? 0) + 1 })); setWorkspaceMode('history'); }}/>}
       {workspaceMode === 'study' && <StudyLibrary t={t} collection={studyCollection} onChange={updateStudy} onOpen={openStudy} storageError={studyError ?? undefined}/>}
       <div hidden={workspaceMode !== 'quick'}>
       <div className="study-toolbar"><button className="secondary-button" disabled={!normalizeHand(query)} onClick={() => saveStudy({view: 'quick', spot, hand: normalizeHand(query)!, binding: unboundQuick ? savedQuick?.binding ?? null : bindStudyDataset(dataset)}, `${spot.players}-max · ${spotTitle(spot)} · ${normalizeHand(query)}`)}>{t('Save this spot', '收藏当前场景')}</button>{unboundQuick && <p role="status">{t('Saved query restored. Its source is missing or has changed; select a dataset explicitly to see new frequencies.', '已恢复收藏条件，原来源未载入或已更新；请主动选择来源，才能查看新的频率。')}<button className="text-button" onClick={() => setModal('data')}>{t('Choose a source', '选择来源')}</button></p>}</div>

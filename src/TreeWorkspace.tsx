@@ -26,7 +26,7 @@ function saveJson(value: unknown, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export type TreeOpenRequest = { version: number; id?: string; study?: Extract<StudyQuery, {view: 'tree'}> };
+export type TreeOpenRequest = { version: number; id?: string; history?: PreflopAction[]; study?: Extract<StudyQuery, {view: 'tree'}> };
 export default function TreeWorkspace({ t, onReference, openRequest, onSave }: { t: Translate; onReference: (id: string, page: number) => void; openRequest?: TreeOpenRequest; onSave: (query: StudyQuery, label: string) => void }) {
   const [game, setGame] = useState<TreeGame>(INITIAL_GAME);
   const [history, setHistory] = useState<PreflopAction[]>(() => buildPreset(INITIAL_GAME, 'unopened'));
@@ -56,7 +56,14 @@ export default function TreeWorkspace({ t, onReference, openRequest, onSave }: {
   const presetSizes = dataset?.source.kind === 'computed' ? dataset.source.computation?.tree : undefined;
   const sourceSnapshot = JSON.stringify(dataset?.source);
   const packKey = inventoryPackKey;
-  const localPacks = treeLibrary.filter((item, index) => !uploadedIds.current.has(item.id) && treeLibrary.findIndex(other => packKey(other) === packKey(item)) === index);
+  // Keep one option per pack, using the active shard when an exact decision
+  // opened a later part. Its option must retain the actual selected dataset ID.
+  const localPacks = [...treeLibrary.reduce((packs, item) => {
+    if (uploadedIds.current.has(item.id)) return packs;
+    const key = packKey(item);
+    if (!packs.has(key) || item.id === selectedId) packs.set(key, item);
+    return packs;
+  }, new Map<string, (typeof treeLibrary)[number]>()).values()];
   const packNodeCount = dataset && !uploadedIds.current.has(dataset.id) ? treeLibrary.filter(item => packKey(item) === packKey(dataset)).reduce((sum, item) => sum + item.nodeCount, 0) : 0;
   const lookupKey = JSON.stringify([selectedId, sourceSnapshot, game, history]);
   const localNode = dataset && state ? findTreeNode(dataset, game, history) : undefined;
@@ -122,7 +129,7 @@ export default function TreeWorkspace({ t, onReference, openRequest, onSave }: {
     }
     if (!openRequest.id || !treeLibrary.some(item => item.id === openRequest.id)) return;
     openedRequest.current = openRequest.version;
-    void selectDataset(openRequest.id, true);
+    void selectDataset(openRequest.id, true, openRequest.history);
   }, [openRequest, treeLibrary]);
 
   async function restoreStudy(saved: Extract<StudyQuery, {view: 'tree'}>) {
@@ -166,7 +173,7 @@ export default function TreeWorkspace({ t, onReference, openRequest, onSave }: {
     try { const next = buildPreset(game, id, presetSizes); setHistory(next); setPreset(id); setPresetError(''); setError(''); }
     catch (error) { setPresetError(error instanceof Error ? error.message : 'This line is unavailable with these stacks.'); }
   }
-  async function selectDataset(id: string, refresh = false) {
+  async function selectDataset(id: string, refresh = false, requestedHistory?: PreflopAction[]) {
     setRestoredBinding(null);
     setMessage('');
     if (!refresh) openedRequest.current = openRequest?.version;
@@ -193,7 +200,12 @@ export default function TreeWorkspace({ t, onReference, openRequest, onSave }: {
         return;
       } finally { if (!controller.signal.aborted) setLoadingDataset(false); }
     }
-    if (incoming) { setGame(incoming.game); setHistory(incoming.nodes[0].history); setPreset(''); setUnequal(Boolean(incoming.game.stacksBb)); }
+    if (incoming) {
+      const nextHistory = requestedHistory ?? incoming.nodes[0].history;
+      try { replayPreflop(incoming.game, nextHistory); }
+      catch { setError(t('The requested action history is invalid for this model.', '请求的行动历史不符合此模型的牌桌规则。')); return; }
+      setGame(incoming.game); setHistory(nextHistory); setPreset(''); setUnequal(Boolean(incoming.game.stacksBb));
+    }
   }
   async function importFile(file: File | undefined) {
     if (!file) return;

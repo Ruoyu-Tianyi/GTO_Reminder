@@ -5,9 +5,11 @@ import { getPositions, validateDataset, type Dataset, type Position } from '../s
 import { gameKey, historyKey, validateTreeDataset, type TreeDataset } from '../src/lib/tree-strategy';
 import type { PreflopAction } from '../src/lib/preflop';
 import { beginPrivateDataRead, stopForPrivateDataRestore } from './private-data-lock';
+import { summarizeStandardSpots, type StandardTreeSpot } from '../src/lib/standard-coverage';
 
 export interface TreeLibraryEntry {
   id: string; name: string; game: TreeDataset['game']; source: TreeDataset['source']; nodeCount: number;
+  standardSpots?: StandardTreeSpot[];
 }
 type LocalDataset = Dataset | TreeDataset;
 interface FileIndex {
@@ -112,6 +114,7 @@ export function localDatasets(): Plugin {
           record.id = dataset.id; record.schemaVersion = dataset.schemaVersion;
           if (dataset.schemaVersion === 2) record.treeSummary = {
             id: dataset.id, name: dataset.name, game: dataset.game, source: dataset.source, nodeCount: dataset.nodes.length,
+            standardSpots: summarizeStandardSpots(dataset),
           };
           if (dataset.schemaVersion === 2) record.histories = new Map(dataset.nodes.map(node => [historyKey(node.history), node.id]));
           remember(record);

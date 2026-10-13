@@ -3,6 +3,7 @@ import { displayPublishedChart } from './display-ranges';
 import type { PublishedChartNode } from './published-charts';
 import type { ReferenceKind, ReferenceRange } from './reference-ranges';
 import { gameKey, type TreeDataset } from './tree-strategy';
+import { buildStandardCoverage, type StandardCoverage, type StandardTreeSpot } from './standard-coverage';
 
 export const INVENTORY_PLAYERS = [6, 7, 8, 9] as const;
 export const INVENTORY_REFERENCE_KINDS: readonly ReferenceKind[] = ['rfi', 'vs-open', 'vs-3bet', 'vs-4bet', 'vs-5bet', 'vs-limp'];
@@ -10,13 +11,15 @@ export type InventoryQuality = 'approximate' | 'unconverged' | 'imported' | 'dem
 type SourceKind = Dataset['source']['kind'];
 
 /** The summary API contains metadata only, never all hands from every shard. */
-export type InventoryTreeEntry = Pick<TreeDataset, 'id' | 'name' | 'game' | 'source'> & { nodeCount: number };
+export type InventoryTreeEntry = Pick<TreeDataset, 'id' | 'name' | 'game' | 'source'> & { nodeCount: number; standardSpots?: StandardTreeSpot[] };
 export interface InventoryInput {
   /** null means unavailable or not yet loaded; [] means successfully loaded and empty. */
   publishedCharts: readonly PublishedChartNode[] | null;
   referenceRanges: readonly ReferenceRange[] | null;
   datasets: readonly Dataset[] | null;
   treeLibrary: readonly InventoryTreeEntry[] | null;
+  /** An endpoint can succeed while excluding invalid files; their coverage remains unknown. */
+  localIncomplete?: boolean;
 }
 export interface ReferenceCounts {
   charts: number;
@@ -60,6 +63,7 @@ export interface DataInventory {
   byPlayers: Array<{ players: number; references: ReferenceInventory | null; local: LocalInventory | null }>;
   totals: { references: ReferenceInventory | null; local: LocalInventory | null };
   packs: InventoryModelPack[] | null;
+  standard: StandardCoverage;
   warnings: string[];
 }
 
@@ -115,7 +119,7 @@ export function inventoryPackKey(entry: Pick<InventoryTreeEntry, 'id' | 'game' |
 
 function groupPacks(entries: readonly InventoryTreeEntry[], warnings: string[]): InventoryModelPack[] {
   const packs = new Map<string, InventoryModelPack>();
-  for (const entry of distinctRecords(entries, 'Tree library', warnings)) {
+  for (const entry of entries) {
     if (!Number.isSafeInteger(entry.nodeCount) || entry.nodeCount < 0) {
       warnings.push(`Tree library: invalid node count for ${entry.id}; excluded from inventory.`);
       continue;
@@ -157,10 +161,12 @@ function localInventory(packs: readonly InventoryModelPack[], datasets: readonly
 /** Inventory already-validated inputs. This is availability, never whole-game coverage or accuracy. */
 export function buildDataInventory(input: InventoryInput): DataInventory {
   const warnings: string[] = [];
+  const knownReferences = distinctRecords([...(input.publishedCharts ?? []).map(displayPublishedChart), ...(input.referenceRanges ?? [])], 'Reference charts', warnings);
   const references = input.publishedCharts !== null && input.referenceRanges !== null
-    ? distinctRecords([...input.publishedCharts.map(displayPublishedChart), ...input.referenceRanges], 'Reference charts', warnings) : null;
+    ? knownReferences : null;
   const datasets = input.datasets === null ? null : distinctRecords(input.datasets, 'Quick datasets', warnings);
-  const packs = input.treeLibrary === null ? null : groupPacks(input.treeLibrary, warnings);
+  const trees = input.treeLibrary === null ? null : distinctRecords(input.treeLibrary, 'Tree library', warnings);
+  const packs = trees === null ? null : groupPacks(trees, warnings);
   const local = (players?: number) => packs !== null && datasets !== null ? localInventory(packs, datasets, players) : null;
   return {
     byPlayers: INVENTORY_PLAYERS.map(players => ({ players,
@@ -169,5 +175,7 @@ export function buildDataInventory(input: InventoryInput): DataInventory {
     })),
     totals: { references: references === null ? null : referenceInventory(references), local: local() },
     packs, warnings,
+    standard: buildStandardCoverage({ references: input.publishedCharts === null && input.referenceRanges === null ? null : knownReferences,
+      treeLibrary: trees, incomplete: input.localIncomplete || input.publishedCharts === null || input.referenceRanges === null || warnings.length > 0 }),
   };
 }
