@@ -8,6 +8,7 @@ import LocalCalculation from './LocalCalculation';
 import type { StudyQuery } from './lib/study-session';
 import { bindStudyReference, matchesStudyReference } from './lib/study-bindings';
 import { MISSING_HAND_BACKGROUND, strategyActionColor } from './lib/strategy-colors';
+import { CHART_REFERENCES } from './data/references';
 
 type Translate = (en: string, zh: string) => string;
 
@@ -36,6 +37,7 @@ export default function PublishedCharts({ t, onReference, initialSelection, init
   const referenceActionColor = (action: (typeof actions)[number], index: number) => strategyActionColor(action, actions.slice(0, index).filter(choice => choice.type === 'raise').length);
   const measured = node?.provenance === 'image-transcription';
   const estimated = node?.provenance === 'seat-projection';
+  const sourceReference = CHART_REFERENCES.find(reference => reference.players === (players === 7 ? 8 : players));
   const available = node ? Object.values(node.hands).filter(row => row.status === 'available').length : 0;
   const title = `${hero}${villain ? ` vs ${villain}` : ''} · ${REFERENCE_KIND_LABELS[kind]}`;
   const sourceLabel = estimated ? 'ESTIMATED · 8 → 7' : measured ? 'IMAGE MEASURED' : node ? 'PUBLISHED · 50% STEPS' : 'NO DATA';
@@ -68,6 +70,7 @@ export default function PublishedCharts({ t, onReference, initialSelection, init
   }, []);
 
   return <div className="published-workspace">
+    {!import.meta.env.DEV && <div className="data-notice" role="note"><Info size={17}/><span><strong>{t('Reference files stay private', '参考数据保留在本机')}</strong><span className="notice-divider">·</span>{t('This web edition does not host the transcribed charts or your local model library. Read the original sources below; use a local installation for numerical reference charts.', '网页版未托管转录范围图或你的本地模型库。可查阅原始来源；数值参考范围请在本地安装中读取。')}</span>{sourceReference && <button onClick={() => onReference(sourceReference.id, sourceReference.rfiPage)}>{t('Read source', '查阅原图')}<ArrowUpRight size={14}/></button>}</div>}
     {sourceMismatch && !loading && <div className="study-toolbar"><p role="status">{t('Saved query restored. Its source is missing or has changed; no replacement frequencies are shown.', '已恢复收藏条件，原来源未载入或已更新，当前不展示替代频率。')}{candidate && <button className="text-button" onClick={() => setExpectedSource(undefined)}>{t('Use the current source', '改用当前来源')}</button>}</p></div>}
     <div className={`tree-intro published-intro ${players === 7 ? 'estimate-intro' : ''}`}><BookOpen size={21}/><div>
       <strong>{t('Reference ranges · Cash 100 BB', '翻前参考范围 · Cash 100 BB')}</strong>

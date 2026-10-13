@@ -11,5 +11,6 @@ dist/
 test-results/
 playwright-report/
 data/private/
+.vercel/
 __pycache__/
 *.pyc
