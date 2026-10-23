@@ -1,22 +1,28 @@
 # GTO Reminder
 
-**v0.2 正在建设 6–9 人完整翻前工作台，尚未完成全部精确 GTO 数据覆盖。** 已接入本地专业出版图的简化 Open 和 Facing Open 频率，并增加完整行动历史和 v2 策略格式。出版图、用户导入和合成演示始终区分；缺失数据不补成建议。
+**v0.2 正在建设 6–9 人完整翻前工作台，尚未完成全部精确 GTO 数据覆盖。** 截至 2026-10-23，本地出版库可查询 **143 张图级索引，包含部分转录**：完整的 Open / Facing Open 简化图、部分可读的 Facing 3-Bet 条件频率，以及 Facing 4-Bet 图示动作。143 不是完整策略或行动树覆盖数。出版图、用户导入和合成演示始终区分；缺失数据不补成建议。
 
 ## v0.2 三种工作方式
 
-- **Published ranges**：可查询 64 张出版范围图（13 张 Open、51 张 Facing Open，共 10,816 格）。6 人局 20 张、9 人局 44 张，按双方位置查询 Raise / 3-Bet、Call、Fold，保持原稿 0/50/100% 精度；6 人 SB Open 支持 Limp。每张图保留原稿尺寸，可直接对照 PDF；9 人 BB vs UTG+2 原图未标 3-Bet 尺寸，页面明确提示。数据只在本地保存，7/8 人数值图仍缺失，不跨人数复用。见[转录说明](docs/REFERENCE_TRANSCRIPTION.md)。
+- **Published ranges**：按人数、双方位置、场景及手牌查阅出版图。6/9 人 Open、Facing Open 保留原稿 0/50/100% 精度，6 人 SB Open 支持 Limp；后续响应图逐手区分可读、未显示和不明确。固定尺寸 Raise 与 All-in 独立显示，未知尺寸保持空值，可对照 PDF。
 - **Action history**：6–9 人按顺序记录 Fold / Check / Call / 多尺寸 Raise，覆盖 Limp、Cold Call、Squeeze、All-in 等行动流程；支持不同座位后手。频率只在完整历史和条件命中 v2 数据时显示。见[v2 格式](docs/DATA_FORMAT_V2.md)。
 - **Quick lookup**：保留 v1 快捷矩阵、4 个合成演示节点及 v1 导入。
 
-完整行动规则支持不等于全部节点已有解；7 人完整公开包和多数非 RFI 原始频率仍待获取。
+| 出版图类型 | 人数与图数 | 实际可查询内容 |
+| --- | --- | --- |
+| Open / Facing Open | 6/9 人，共 64 张 | 原有 13 张 Open、51 张 Facing Open 保持不变；完整转录 10,816 格简化频率 |
+| Facing 3-Bet | 6 人 15 张、9 人 36 张 | 2,606 格可读条件频率，6,013 格缺失；reach 未知，不计算节点整体比例 |
+| Facing 4-Bet | 8 人 28 张 | 985 格仅显示可见动作，3,692 格未显示、55 格不明确；不提供逐手百分比 |
 
-本轮新增数据的复现方式见 [Facing Open 转录](docs/RESPONSE_TRANSCRIPTION.md)，后续 3-Bet 图的手牌缺失与到达率边界见[数据缺口](docs/RESPONSE_DATA_GAPS.md)。
+完整行动规则支持不等于全部节点已有解。7 人仍未取得免账号、可核验的公开包；8 人 Facing 3-Bet 原图待转录，6/9 人 Facing 4-Bet 尚无已接入来源。原始 PDF 与衍生手牌数据只保存在本地，不随 GitHub 仓库或生产构建发布。
+
+复现与边界：[Open 转录](docs/REFERENCE_TRANSCRIPTION.md)、[Facing Open](docs/RESPONSE_TRANSCRIPTION.md)、[Facing 3-Bet](docs/THREEBET_TRANSCRIPTION.md)、[Facing 4-Bet](docs/FOURBET_TRANSCRIPTION.md)、[数据缺口](docs/RESPONSE_DATA_GAPS.md)。这些转录均不是原始精确 solver 输出。
 
 GTO Reminder 希望把成熟的德州扑克策略数据整理成易用的网页工具：选择人数、位置、后手和前序行动，查看范围矩阵，并按手牌查询 Open、Call Open、3-Bet、Call 3-Bet、4-Bet 等动作频率。先把翻前查询做可靠，再逐步扩展至翻后。
 
 [GitHub repository](https://github.com/Ruoyu-Tianyi/GTO_Reminder) · [数据格式](docs/DATA_FORMAT.md) · [来源调研](docs/DATA_SOURCES.md) · [后续路线](docs/ROADMAP.md)
 
-**2026-09-27 数据补充：**已接入 6、8、9 人 Cash 100 BB 的专业原始 PDF 查阅，合计 205 个场景页码索引，包括 8 人局的 Facing 4-Bet。网页顶部点击 `Browse charts`。5、7 人完整公开资料与逐手精确数值频率仍缺失；原图不会冒充精确策略填进频率计算器。来源、原稿缺陷、页码及本地下载方式见[公开图表记录](docs/PUBLIC_CHARTS.md)。
+原图资料库另有 231 个场景索引，来自最初的 205 个基本场景及后续增加的 26 个原图场景。网页顶部点击 `Browse charts` 查阅；原图索引与上述 143 张交互图重叠，不能相加当作覆盖数。来源、原稿缺陷、页码及本地下载方式见[公开图表记录](docs/PUBLIC_CHARTS.md)。
 
 ## 当前功能
 
@@ -25,9 +31,9 @@ GTO Reminder 希望把成熟的德州扑克策略数据整理成易用的网页�
 - 查询条件包含游戏类型、人数、位置、有效后手、前序行动、Open / 3-Bet / 4-Bet 尺寸、Ante 和 Rake。
 - 13 × 13 范围矩阵展示 169 类起手牌及动作混频；支持按动作筛选和点击手牌查看频率。
 - 输入 `AKs`、`kAo`、`As Ks`、`K♥A♠` 等手牌并归一化；拒绝 `AK` 这种未说明同花性的输入，以及 `AsAs` 这种重复牌。
-- 范围汇总按对子 6、suited 4、offsuit 12 个组合加权，总计 1,326 个组合。
+- 完整 Open / Facing Open 出版图按对子 6、suited 4、offsuit 12 个组合汇总；Facing 3-Bet / 4-Bet 的 reach 未知，不展示节点整体动作比例。v2 数据只有满足 reach 条件时才提供相应汇总。
 - 导入本地 JSON，校验场景、位置顺序、下注尺寸、169 类完整覆盖、频率范围与合计，并显示文件声明的来源信息。
-- 查询只返回完全匹配的节点。缺少节点时显示 `NO DATA`，不会替换后手、人数、抽水或尺寸，也不会插值补出策略。
+- 精确策略查询只返回完全匹配的节点。缺少节点时显示 `NO DATA`，不会替换后手、人数、抽水或尺寸，也不会插值补出策略；出版图的参考关联单独显示已知条件和缺失项。
 
 ## 本地运行
 
@@ -80,18 +86,18 @@ npm run preview
 
 本地开发模式也会读取 `data/private/` 顶层的标准 JSON 文件（单文件上限 20 MB），经过相同校验后加入列表，刷新页面会再次载入。该目录已被 Git 忽略，不进入生产构建。无效文件在数据面板中提示，并不影响其他有效文件。数据面板提供 5–9 人场景覆盖统计和缺失清单；计数不含演示或 PDF，也不等于整个翻前行动树。
 
-来源网址、许可文字和准确性均由文件提供者声明。当前校验器检查结构与部分行动规则，不验证供应商身份、使用权限、求解收敛或频率质量。具体接入建议见[数据来源调研](docs/DATA_SOURCES.md)。
+用户导入文件的来源网址、许可文字和准确性由文件提供者声明；格式校验不证明供应商身份、使用权限或求解收敛。本地出版转录另有固定来源、元数据与文件指纹校验，也不因此成为精确 solver 数据。具体接入建议见[数据来源调研](docs/DATA_SOURCES.md)。
 
-## v0.1 的边界
+## 旧版 v1 快捷格式的边界
 
-当前是 React + TypeScript + Vite 本地网页应用，查询预先提供的数据，不运行 solver。schema v1 仅表达无人入池与其他玩家均已弃牌的单一加注行动线。
+应用使用 React + TypeScript + Vite，查询预先提供的数据，不运行 solver。以下限制仅针对保留的 v1 快捷格式；完整行动历史使用[独立的 v2 格式](docs/DATA_FORMAT_V2.md)。schema v1 仅表达无人入池与其他玩家均已弃牌的单一加注行动线。
 
 - 不覆盖 Limp、冷跟者、Squeeze、多路行动历史、同节点多个加注尺寸、非对称后手、Straddle、Big Blind Ante、ICM 或 bounty。
-- SB 的完整首次行动可能包含 Limp；本版不表达该动作，也没有内置 SB RFI 场景，不能据此呈现完整 SB 策略。
+- SB 的完整首次行动可能包含 Limp；v1 不表达该动作。出版图中的 SB Limp 与 v2 行动历史独立处理。
 - Facing 4-Bet 的 Raise 仅为汇总 5-Bet 频率，没有 5-Bet 尺寸或 Shove 区分。
 - 169 类数据不区分具体花色，也不包含到达节点的 reach 权重。范围汇总是对全部起手牌组合的加权展示，不是后续节点中实际到达范围的整体动作比例。
 - `MTT · Chip EV` 是可匹配的数据标签，不表示已提供比赛数据，也不能代表 ICM 策略。
-- 翻后尚未实现；专业数据接入、持久保存和更完整的行动树列入[路线图](docs/ROADMAP.md)。
+- 翻后尚未实现；后续数据覆盖、持久保存与研究方向见[路线图](docs/ROADMAP.md)。
 
 ## 项目结构
 
