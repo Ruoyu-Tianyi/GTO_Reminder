@@ -4,9 +4,9 @@ import type { Position, SpotKind } from '../lib/poker';
  * Page metadata from PokerCoaching's public Ultimate Cash Game Preflop Guide 2026.
  * Source PDF SHA-256: 2927bdf938a52d95aa53716e5bf61705216da8685d17572775c6f11a0ecd7df9
  * Only 8-max Cash 100 BB charts are indexed. No strategy frequencies are copied.
- * Page 17 has a visible CO vs SB heading but a CO vs BB text layer, so that
- * ambiguous chart is deliberately not indexed as either spot. Page 16 has the
- * unambiguous CO vs SB chart. The BB vs SB Limp chart on page 12 is not an RFI
+ * Enlarged title crops reviewed on 2026-10-02 confirm page 17 CO vs BB agrees
+ * with its text layer; the earlier conflict report was a thumbnail misreading.
+ * The BB vs SB Limp chart on page 12 is not an RFI
  * response and is not indexed by the current SpotKind schema.
  */
 export const POKERCOACHING_PAGES: ReadonlyArray<{
@@ -74,6 +74,7 @@ export const POKERCOACHING_PAGES: ReadonlyArray<{
   { page: 16, kind: 'vs-3bet', hero: 'HJ', villain: 'BB' },
   { page: 16, kind: 'vs-3bet', hero: 'CO', villain: 'BTN' },
   { page: 16, kind: 'vs-3bet', hero: 'CO', villain: 'SB' },
+  { page: 17, kind: 'vs-3bet', hero: 'CO', villain: 'BB' },
   { page: 17, kind: 'vs-3bet', hero: 'BTN', villain: 'SB' },
   { page: 17, kind: 'vs-3bet', hero: 'BTN', villain: 'BB' },
   { page: 17, kind: 'vs-3bet', hero: 'SB', villain: 'BB' },

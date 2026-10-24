@@ -47,10 +47,10 @@ describe('reference manifests', () => {
     }
   });
 
-  it('indexes exactly 90 distinct 8-max spots with 7 / 28 / 27 / 28 action counts', () => {
-    expect(POKERCOACHING_PAGES).toHaveLength(90);
-    expect(new Set(POKERCOACHING_PAGES.map((entry) => `${entry.kind}:${entry.hero}:${entry.villain ?? ''}`)).size).toBe(90);
-    expect(KINDS.map((kind) => POKERCOACHING_PAGES.filter((entry) => entry.kind === kind).length)).toEqual([7, 28, 27, 28]);
+  it('indexes exactly 91 distinct 8-max spots with 7 / 28 / 28 / 28 action counts', () => {
+    expect(POKERCOACHING_PAGES).toHaveLength(91);
+    expect(new Set(POKERCOACHING_PAGES.map((entry) => `${entry.kind}:${entry.hero}:${entry.villain ?? ''}`)).size).toBe(91);
+    expect(KINDS.map((kind) => POKERCOACHING_PAGES.filter((entry) => entry.kind === kind).length)).toEqual([7, 28, 28, 28]);
     const ref = reference(8);
     const legalKeys = new Set(legalSpots(ref).map((entry) => `${entry.kind}:${entry.hero}:${entry.villain ?? ''}`));
     for (const entry of POKERCOACHING_PAGES) {
@@ -62,10 +62,11 @@ describe('reference manifests', () => {
     }
   });
 
-  it('excludes the ambiguous CO versus BB 3-bet chart while retaining nearby clear charts', () => {
+  it('includes the enlarged-image verified CO versus BB 3-bet chart with all legal spots covered', () => {
     const ref = reference(8);
     const missing = legalSpots(ref).filter((entry) => referencePage(ref, entry) === null);
-    expect(missing).toEqual([spot(ref, { kind: 'vs-3bet', hero: 'CO', villain: 'BB' })]);
+    expect(missing).toEqual([]);
+    expect(referencePage(ref, spot(ref, { kind: 'vs-3bet', hero: 'CO', villain: 'BB' }))).toBe(17);
     expect(referencePage(ref, spot(ref, { kind: 'vs-3bet', hero: 'CO', villain: 'SB' }))).toBe(16);
     expect(referencePage(ref, spot(ref, { kind: 'vs-3bet', hero: 'BTN', villain: 'BB' }))).toBe(17);
     expect(referencePage(ref, spot(ref, { kind: 'rfi', hero: 'SB' }))).toBe(5);

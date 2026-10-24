@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 import { validatePublishedCharts, type PublishedChartsResponse } from '../src/lib/published-charts';
+import { beginPrivateDataRead, stopForPrivateDataRestore } from './private-data-lock';
 
 export const PUBLISHED_CHARTS_SHA256 = '9c99741a172bb8534de608385a2380d1da6e5ff267628595a17ed779005ba5f6';
 export const PUBLISHED_RESPONSE_CHARTS_SHA256 = 'a87eedd66e38864152f6c969e7cc3f7c58f3481bfdd2388c452b445f1f144d25';
@@ -67,7 +68,10 @@ export function publishedCharts(): Plugin {
         if (request.method !== 'GET' && request.method !== 'HEAD') {
           response.writeHead(405, { Allow: 'GET, HEAD' }); response.end(); return;
         }
+        const version = await beginPrivateDataRead(server.config.root, request.method, response);
+        if (!version) return;
         const result = await loadAllPublishedCharts(server.config.root);
+        if (await stopForPrivateDataRestore(server.config.root, request.method, response, version)) return;
         const body = JSON.stringify(result);
         response.writeHead(200, {
           'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body),

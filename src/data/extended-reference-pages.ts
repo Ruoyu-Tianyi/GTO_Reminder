@@ -23,12 +23,12 @@ export interface ExtendedReferencePage {
 }
 
 /**
- * Visually reviewed on 2026-09-29 against the original public PDF:
+ * Visually re-reviewed in enlarged title crops on 2026-10-02:
  * https://poker-coaching.s3.amazonaws.com/tools/preflop-charts/The%20Ultimate%20Cash%20Game%20Preflop%20Guide.pdf
  * SHA-256: 2927bdf938a52d95aa53716e5bf61705216da8685d17572775c6f11a0ecd7df9
  *
  * Metadata only: no numerical strategy frequencies are reproduced.
- * The 25 unambiguous Facing 5-Bet charts are distinct from the existing index.
+ * The 27 Facing 5-Bet charts are distinct from the existing index.
  * SB unopened is the SAME source chart as the existing SB RFI entry on page 5,
  * so it must not be counted as an additional unique source chart.
  *
@@ -46,7 +46,8 @@ export interface ExtendedReferencePage {
  *   prior open. Source Raise 4 BB / Call / Fold means Raise / Limp / Fold.
  *
  * Missing: UTG vs UTG+1 Facing 5-Bet, and SB limp/facing BB isolation raise.
- * Conflicting visual headings are recorded separately below and NOT indexed.
+ * Previously reported conflicts on pages 24 and 26 were thumbnail misreadings;
+ * enlarged headings agree with their text layers and both charts are restored.
  */
 const base = {
   referenceId: 'pokercoaching-8max-100bb',
@@ -90,6 +91,7 @@ export const EXTENDED_REFERENCE_PAGES: ReadonlyArray<ExtendedReferencePage> = [
   facingFiveBet(24, 3, 'UTG+1', 'CO'),
   facingFiveBet(24, 4, 'UTG+1', 'BTN'),
   facingFiveBet(24, 5, 'UTG+1', 'SB'),
+  facingFiveBet(24, 6, 'UTG+1', 'BB'),
   facingFiveBet(25, 1, 'LJ', 'HJ'),
   facingFiveBet(25, 2, 'LJ', 'CO'),
   facingFiveBet(25, 3, 'LJ', 'BTN'),
@@ -101,23 +103,13 @@ export const EXTENDED_REFERENCE_PAGES: ReadonlyArray<ExtendedReferencePage> = [
   facingFiveBet(26, 3, 'HJ', 'BB'),
   facingFiveBet(26, 4, 'CO', 'BTN'),
   facingFiveBet(26, 5, 'CO', 'SB'),
+  facingFiveBet(26, 6, 'CO', 'BB'),
   facingFiveBet(27, 1, 'BTN', 'SB'),
   facingFiveBet(27, 2, 'BTN', 'BB'),
   facingFiveBet(27, 3, 'SB', 'BB'),
 ];
 
-/** Source defects retained for audit; never promote these to matched nodes. */
-export const EXTENDED_REFERENCE_ISSUES = [
-  {
-    page: 24, chart: 6,
-    visibleTitle: 'UTG+1 vs SB · 5-Bet All-In',
-    textLayerTitle: 'UTG+1 vs BB · 5-Bet All-In',
-    note: 'The bottom-left chart already has the consistent UTG+1 vs SB heading. The bottom-right chart conflicts with its text layer and is excluded; do not silently rename it BB.',
-  },
-  {
-    page: 26, chart: 6,
-    visibleTitle: 'CO vs SB · 5-Bet All-In',
-    textLayerTitle: 'CO vs BB · 5-Bet All-In',
-    note: 'The bottom-left chart already has the consistent CO vs SB heading. The bottom-right chart conflicts with its text layer and is excluded; do not silently rename it BB.',
-  },
-] as const;
+/** No unresolved title conflicts after enlarged-image verification. */
+export const EXTENDED_REFERENCE_ISSUES: ReadonlyArray<{
+  page: number; chart: number; visibleTitle: string; textLayerTitle: string; note: string;
+}> = [];

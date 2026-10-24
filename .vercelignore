@@ -1,0 +1,10 @@
+.git
+.runtime
+.vercel
+data/private
+node_modules
+dist
+test-results
+playwright-report
+.env
+.env.*

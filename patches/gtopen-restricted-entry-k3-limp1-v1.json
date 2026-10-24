@@ -1,0 +1,19 @@
+{
+  "model": "restricted-entry-k3-limp1-v1",
+  "baseCommit": "b69ea07c79884fc598757dc45c712e73976db810",
+  "patchSha256": "d7531526404a60b208c2798fe8b1c81fae5bdf2e6985c75e94f327732c2d9f6c",
+  "sources": {
+    "crates/solver/examples/reference_order.rs": "fd32551079bffda849a7eeeeadfbb7fd4fa1405cc6791d940dfb6470abd73614",
+    "crates/solver/src/preflop/mod.rs": "98ddd070dd8c7bd3a05757e17298a08a41f251b13bd899c8117eb02c8c9e920d",
+    "crates/solver/src/preflop/multiway.rs": "f4e9d84eba30a2940f2b1672cb8ec87674287ad0fb232df283c0a9d04eb181ca",
+    "crates/solver/src/preflop/save.rs": "63651c36e7c80b4b3d82b65d5d996b24c76338bda032b085d202a5035eb284f1",
+    "crates/solver/tests/gpu_bench.rs": "cf56a80042f3779c7b397220d98d23a197d46283b067066aea159e575664049d",
+    "crates/solver/tests/gpu_check_perf.rs": "d7a98fa8b4d5c95c36800296368ded0a18aeef0309e5240d172ec9fd9d28d490",
+    "crates/solver/tests/preflop.rs": "ef12cbefb4892ad88261159c668d9fdd7f77c7acd4273d9648bd4ec93343403e",
+    "crates/solver/tests/preflop_bench.rs": "58df06146909889d72523536fac8dc8b79cc3672ae8d282644306064e452c26c",
+    "crates/solver/tests/preflop_generic_perf.rs": "be607e038abad749535de9062907bc705992692ebe80f5c33e05244d4f3d5d7a",
+    "crates/solver/tests/preflop_gpu.rs": "7d23ca869a6f4a0564d5e879fca0dcecc51e99f711e62c6de80442570365cb9e",
+    "crates/solver/tests/preflop_perf.rs": "3823e0b8bb87b34dc2bc2efc66ca88ce5a3865b2467ff2ddb6f7d5360ff53300",
+    "crates/solver/tests/preflop_target_perf.rs": "7de8c1ed02fd8bd765778ebf358846d9be07f751290297cd0bd6cc25007e60fe"
+  }
+}

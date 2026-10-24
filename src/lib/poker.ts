@@ -42,9 +42,58 @@ export interface Dataset {
     url: string;
     license: string;
     retrievedAt: string;
-    kind: 'demo' | 'imported';
+    kind: 'demo' | 'imported' | 'computed';
+    computation?: ComputationInfo;
   };
   nodes: StrategyNode[];
+}
+
+export interface ComputationInfo {
+  engine: string; model: string; iterations: number;
+  status: 'unconverged' | 'approximate'; scope: string;
+  /** Fixed raise-to sizes, excluding antes. Equal future sizes may be terminal all-in placeholders. */
+  tree?: ComputationTree;
+  /** Final-snapshot model best-response gap only; never real-game exploitability. */
+  modelGapBb?: number | null;
+}
+
+export interface ComputationTree {
+  openSizeBb: number; threeBetSizeBb: number; fourBetSizeBb: number;
+  maxRaises: number; limp: boolean;
+  /** First raise-to after an unopened limp; not the size of the limp itself. */
+  limpRaiseBb?: number;
+  /** Different solved game: later entries/limps are explicitly excluded, not filtered exports. */
+  model?: 'restricted-entry-k3-limp1-v1';
+  maxVoluntaryContributors?: 3;
+  maxUnopenedLimps?: 1;
+}
+
+export function validateComputation(value: unknown): ComputationInfo {
+  const raw = record(value, 'source.computation');
+  const iterations = finiteNumber(raw.iterations, 'computation.iterations', 0, Number.MAX_SAFE_INTEGER);
+  if (!Number.isInteger(iterations) || (raw.status !== 'unconverged' && raw.status !== 'approximate')) throw new Error('Invalid computation progress or quality status.');
+  let tree: ComputationTree | undefined;
+  if (raw.tree !== undefined) {
+    const input = record(raw.tree, 'computation.tree');
+    const openSizeBb = finiteNumber(input.openSizeBb, 'computation.tree.openSizeBb', 2);
+    const threeBetSizeBb = finiteNumber(input.threeBetSizeBb, 'computation.tree.threeBetSizeBb', 2);
+    const fourBetSizeBb = finiteNumber(input.fourBetSizeBb, 'computation.tree.fourBetSizeBb', 2);
+    const maxRaises = finiteNumber(input.maxRaises, 'computation.tree.maxRaises', 1, 5);
+    if (threeBetSizeBb < openSizeBb || fourBetSizeBb < threeBetSizeBb || !Number.isInteger(maxRaises) || typeof input.limp !== 'boolean') {
+      throw new Error('computation.tree requires nondecreasing raise-to sizes, integer maxRaises 1–5, and boolean limp.');
+    }
+    const limpRaiseBb = input.limpRaiseBb === undefined ? undefined : finiteNumber(input.limpRaiseBb, 'computation.tree.limpRaiseBb', 2);
+    tree = { openSizeBb, threeBetSizeBb, fourBetSizeBb, maxRaises, limp: input.limp, ...(limpRaiseBb === undefined ? {} : { limpRaiseBb }) };
+    if (input.model !== undefined || input.maxVoluntaryContributors !== undefined || input.maxUnopenedLimps !== undefined) {
+      if (input.model !== 'restricted-entry-k3-limp1-v1' || input.maxVoluntaryContributors !== 3 || input.maxUnopenedLimps !== 1) {
+        throw new Error('Restricted-entry trees require the recognized model and explicit contributor/limp limits 3/1.');
+      }
+      tree.model = input.model; tree.maxVoluntaryContributors = 3; tree.maxUnopenedLimps = 1;
+    }
+  }
+  const modelGapBb = raw.modelGapBb === undefined || raw.modelGapBb === null ? raw.modelGapBb : finiteNumber(raw.modelGapBb, 'computation.modelGapBb', 0);
+  return { engine: requiredText(raw.engine, 'computation.engine'), model: requiredText(raw.model, 'computation.model'), iterations,
+    status: raw.status, scope: requiredText(raw.scope, 'computation.scope'), ...(tree ? { tree } : {}), ...(modelGapBb === undefined ? {} : { modelGapBb }) };
 }
 
 const POSITION_SETS: Record<number, Position[]> = {
@@ -136,7 +185,7 @@ function finiteNumber(value: unknown, path: string, min: number, max = Infinity)
   return value;
 }
 
-function validateSpot(value: unknown, path: string): Spot {
+export function validateSpot(value: unknown, path: string): Spot {
   const raw = record(value, path);
   const players = finiteNumber(raw.players, `${path}.players`, 2, 9);
   const positions = getPositions(players);
@@ -165,7 +214,7 @@ function validateSpot(value: unknown, path: string): Spot {
   return { players, hero, villain, stackBb, kind, openSizeBb, threeBetSizeBb, fourBetSizeBb, format: raw.format, anteBb, rake };
 }
 
-function validateActionSizes(spot: Spot, hasRaise: boolean, path: string): void {
+export function validateActionSizes(spot: Spot, hasRaise: boolean, path: string): void {
   function checkRaise(field: 'openSizeBb' | 'threeBetSizeBb' | 'fourBetSizeBb', previousBet: number, previousIncrement: number) {
     const size = spot[field];
     if (size > spot.stackBb) throw new Error(`${path}.${field} exceeds the effective stack for an action in this node.`);
@@ -201,7 +250,8 @@ export function validateDataset(value: unknown): Dataset {
   if (!/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(retrievedAt) || !Number.isFinite(Date.parse(retrievedAt))) {
     throw new Error('source.retrievedAt must be an ISO date or timestamp.');
   }
-  if (rawSource.kind !== 'demo' && rawSource.kind !== 'imported') throw new Error('source.kind must be demo or imported.');
+  if (rawSource.kind !== 'demo' && rawSource.kind !== 'imported' && rawSource.kind !== 'computed') throw new Error('source.kind must be demo, imported or computed.');
+  const computation = rawSource.kind === 'computed' ? validateComputation(rawSource.computation) : undefined;
   if (!Array.isArray(raw.nodes) || raw.nodes.length === 0) throw new Error('nodes must be a nonempty array.');
   const nodeIds = new Set<string>();
   const spotKeys = new Set<string>();
@@ -239,5 +289,5 @@ export function validateDataset(value: unknown): Dataset {
     validateActionSizes(spot, HANDS.some((hand) => frequencies[hand].raise > 0), `${path}.spot`);
     return { id: nodeId, spot, frequencies };
   });
-  return { schemaVersion: 1, id, name, source: { name: sourceName, url, license, retrievedAt, kind: rawSource.kind }, nodes };
+  return { schemaVersion: 1, id, name, source: { name: sourceName, url, license, retrievedAt, kind: rawSource.kind, ...(computation ? { computation } : {}) }, nodes };
 }

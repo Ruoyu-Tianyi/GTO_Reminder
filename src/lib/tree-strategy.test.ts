@@ -283,3 +283,123 @@ describe('conditional range summaries and empty templates', () => {
     expect(() => createTreeTemplate(GAME, history)).toThrow(/unfinished hand/);
   });
 });
+
+describe('restricted-entry K=3 / one unopened limp model consistency', () => {
+  const FOLD: StrategyChoice = { id: 'fold', type: 'fold' };
+  const CALL: StrategyChoice = { id: 'call', type: 'call' };
+  const THREE_CONTRIBUTORS: PreflopAction[] = [
+    { actor: 'UTG', type: 'raise', amountBb: 2.5 },
+    { actor: 'HJ', type: 'call' }, { actor: 'CO', type: 'call' },
+  ];
+
+  function restrictedFixture(history: PreflopAction[], actions: StrategyChoice[]): TreeDataset {
+    const data = fixture();
+    data.source.kind = 'computed';
+    data.source.computation = {
+      engine: 'Synthetic contract fixture', model: 'Restricted synthetic game, not solver output',
+      iterations: 0, status: 'unconverged', scope: 'Tests only',
+      tree: { openSizeBb: 2.5, threeBetSizeBb: 10, fourBetSizeBb: 22, maxRaises: 3,
+        limp: true, limpRaiseBb: 3, model: 'restricted-entry-k3-limp1-v1',
+        maxVoluntaryContributors: 3, maxUnopenedLimps: 1 },
+    };
+    data.nodes = [missingNode('restricted-synthetic-node', history, actions)];
+    return data;
+  }
+
+  it.each(['call', 'raise'] as const)('rejects a fourth contributor %s in historical actions', type => {
+    const history: PreflopAction[] = [...THREE_CONTRIBUTORS,
+      { actor: 'BTN', type, ...(type === 'raise' ? { amountBb: 10 } : {}) }];
+    expect(replayPreflop(GAME, history).nextActor).toBe('SB');
+    expect(() => validateTreeDataset(restrictedFixture(history, [FOLD])))
+      .toThrow(/nodes\[0\]\.history\[3\].*3 voluntary contributors/);
+  });
+
+  it.each(['call', 'raise'] as const)('rejects a fourth contributor %s in the current menu', type => {
+    const choice: StrategyChoice = { id: type, type, ...(type === 'raise' ? { amountBb: 10 } : {}) };
+    expect(() => validateTreeDataset(restrictedFixture(THREE_CONTRIBUTORS, [FOLD, choice])))
+      .toThrow(/nodes\[0\]\.actions\[1\].*3 voluntary contributors/);
+    expect(validateTreeDataset(restrictedFixture(THREE_CONTRIBUTORS, [FOLD])).nodes[0].actions).toEqual([FOLD]);
+  });
+
+  it('does not forget a contributor who later folded', () => {
+    const history: PreflopAction[] = [...THREE_CONTRIBUTORS,
+      { actor: 'BTN', type: 'raise', amountBb: 10 },
+      { actor: 'SB', type: 'fold' }, { actor: 'BB', type: 'fold' }, { actor: 'UTG', type: 'fold' }];
+    const state = replayPreflop(GAME, history);
+    expect(state.seats.filter(seat => !seat.folded)).toHaveLength(3);
+    expect(state.nextActor).toBe('HJ');
+    expect(() => validateTreeDataset(restrictedFixture(history, [FOLD, CALL]))).toThrow(/3 voluntary contributors/);
+  });
+
+  it('rejects a second unopened limp in historical actions', () => {
+    const history: PreflopAction[] = [{ actor: 'UTG', type: 'call' }, { actor: 'HJ', type: 'call' }];
+    expect(replayPreflop(GAME, history).nextActor).toBe('CO');
+    expect(() => validateTreeDataset(restrictedFixture(history, [FOLD])))
+      .toThrow(/nodes\[0\]\.history\[1\].*1 unopened limp/);
+  });
+
+  it('rejects a second unopened limp in the current menu while allowing isolation raises', () => {
+    const history: PreflopAction[] = [{ actor: 'UTG', type: 'call' }];
+    expect(() => validateTreeDataset(restrictedFixture(history, [FOLD, CALL])))
+      .toThrow(/nodes\[0\]\.actions\[1\].*1 unopened limp/);
+    const isolation: StrategyChoice = { id: 'isolate', type: 'raise', amountBb: 3 };
+    expect(validateTreeDataset(restrictedFixture(history, [FOLD, isolation])).nodes[0].actions).toEqual([FOLD, isolation]);
+  });
+
+  it('counts a positive short all-in call as the first unopened limp', () => {
+    const data = restrictedFixture([{ actor: 'UTG', type: 'call' }], [FOLD, CALL]);
+    data.game.stacksBb = { UTG: 0.25 };
+    const state = replayPreflop(data.game, data.nodes[0].history);
+    expect(state.seats[0]).toMatchObject({ allIn: true, committedBb: 0.25 });
+    expect(() => validateTreeDataset(data)).toThrow(/1 unopened limp/);
+  });
+
+  it('allows calls after the first raise and later raises by an existing contributor', () => {
+    const history: PreflopAction[] = [
+      { actor: 'UTG', type: 'call' }, { actor: 'HJ', type: 'raise', amountBb: 3 },
+      { actor: 'CO', type: 'call' }, { actor: 'BTN', type: 'fold' },
+      { actor: 'SB', type: 'fold' }, { actor: 'BB', type: 'fold' },
+    ];
+    const raise: StrategyChoice = { id: 'reraise', type: 'raise', amountBb: 10 };
+    expect(replayPreflop(GAME, history).nextActor).toBe('UTG');
+    expect(validateTreeDataset(restrictedFixture(history, [FOLD, CALL, raise])).nodes[0].actions).toEqual([FOLD, CALL, raise]);
+    const reraised = [...history, { actor: 'UTG' as const, type: 'raise' as const, amountBb: 10 }];
+    expect(validateTreeDataset(restrictedFixture(reraised, [FOLD, CALL])).nodes[0].history).toEqual(reraised);
+  });
+
+  it('does not count posted blinds and evaluates each menu choice independently', () => {
+    const history: PreflopAction[] = [
+      { actor: 'UTG', type: 'fold' }, { actor: 'HJ', type: 'fold' },
+      { actor: 'CO', type: 'raise', amountBb: 2.5 }, { actor: 'BTN', type: 'call' },
+      { actor: 'SB', type: 'fold' },
+    ];
+    const actions: StrategyChoice[] = [FOLD, CALL,
+      { id: 'reraise_10', type: 'raise', amountBb: 10 },
+      { id: 'reraise_12', type: 'raise', amountBb: 12 }];
+    expect(replayPreflop(GAME, history).nextActor).toBe('BB');
+    expect(validateTreeDataset(restrictedFixture(history, actions)).nodes[0].actions).toEqual(actions);
+  });
+
+  it('allows a free big-blind check after one small-blind limp', () => {
+    const history: PreflopAction[] = [
+      { actor: 'UTG', type: 'fold' }, { actor: 'HJ', type: 'fold' },
+      { actor: 'CO', type: 'fold' }, { actor: 'BTN', type: 'fold' }, { actor: 'SB', type: 'call' },
+    ];
+    const actions: StrategyChoice[] = [FOLD, { id: 'check', type: 'check' }, { id: 'raise', type: 'raise', amountBb: 3 }];
+    expect(validateTreeDataset(restrictedFixture(history, actions)).nodes[0].actions).toEqual(actions);
+  });
+
+  it.each(['history', 'menu'] as const)('leaves unrestricted computed %s with four contributors and multiple limps compatible', where => {
+    const histories: PreflopAction[][] = [
+      [...THREE_CONTRIBUTORS, ...(where === 'history' ? [{ actor: 'BTN' as const, type: 'call' as const }] : [])],
+      [{ actor: 'UTG', type: 'call' }, ...(where === 'history' ? [{ actor: 'HJ' as const, type: 'call' as const }] : [])],
+    ];
+    for (const history of histories) {
+      const data = restrictedFixture(history, where === 'history' ? [FOLD] : [FOLD, CALL]);
+      delete data.source.computation!.tree!.model;
+      delete data.source.computation!.tree!.maxVoluntaryContributors;
+      delete data.source.computation!.tree!.maxUnopenedLimps;
+      expect(validateTreeDataset(data).nodes[0].history).toEqual(history);
+    }
+  });
+});

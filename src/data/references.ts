@@ -44,7 +44,7 @@ export const CHART_REFERENCES: ChartReference[] = [
     pages: 47, rfiPage: 4, responsePages: {}, spotPages: POKERCOACHING_PAGES,
     browsePages: [1, 2, 3, 4, 5, ...Array.from({ length: 20 }, (_, i) => i + 8)],
     precision: 'Published mixed-frequency charts; rounding unspecified',
-    conditions: 'Open 3 BB (SB 4 BB, with Limp). Sizes vary by position. Rake, ante and solver convergence are not disclosed. Page 17 has a conflicting CO heading; CO vs BB Facing 3-Bet is not indexed. Pages 6–7 and 28–47 are 200 BB and excluded from the page selector.',
+    conditions: 'Open 3 BB (SB 4 BB, with Limp). Sizes vary by position. Rake, ante and solver convergence are not disclosed. Enlarged title review on 2026-10-02 recovered previously misread BB headings on pages 17, 24 and 26. Pages 6–7 and 28–47 are 200 BB and excluded from the page selector.',
   },
   {
     id: 'rangeconverter-9max-100bb', title: '9-max · 100 BB · Live cash',

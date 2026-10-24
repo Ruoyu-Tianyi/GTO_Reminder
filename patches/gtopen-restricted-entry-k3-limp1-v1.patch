@@ -1,0 +1,402 @@
+diff --git a/crates/solver/examples/reference_order.rs b/crates/solver/examples/reference_order.rs
+index a2543590..9cf5a145 100644
+--- a/crates/solver/examples/reference_order.rs
++++ b/crates/solver/examples/reference_order.rs
+@@ -16,5 +16,5 @@ fn main() {
+     let positions = ["UTG", "UTG1", "UTG2", "LJ", "HJ", "CO", "BTN", "SB", "BB"];
+     let cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: positions.iter().map(|s| s.to_string()).collect(),
+         stack: 100.0,
+diff --git a/crates/solver/src/preflop/mod.rs b/crates/solver/src/preflop/mod.rs
+index ac44dc3e..4662bcc1 100644
+--- a/crates/solver/src/preflop/mod.rs
++++ b/crates/solver/src/preflop/mod.rs
+@@ -72,4 +72,9 @@ pub struct PreflopConfig {
+     #[serde(default, skip_serializing_if = "is_false")]
+     pub utg_straddle: bool,
++    /// Local restricted game: at most three ever-voluntary contributors and
++    /// one unopened limp. Later entrants are forced to fold when facing a bet;
++    /// a free check is retained. This is NOT the unrestricted multiplayer game.
++    #[serde(default, skip_serializing_if = "is_false")]
++    pub restricted_entry_k3_limp1: bool,
+     /// Dead ante per seat (goes to the pot, does not count toward calls).
+     #[serde(default)]
+@@ -299,4 +304,6 @@ pub struct PNode {
+ 
+ struct BuildState {
++    /// Never cleared on fold; posts, antes and checks do not count.
++    voluntary: u32,
+     invested: Vec<f64>,
+     folded: u32,
+@@ -2988,4 +2995,7 @@ impl PreflopSolver {
+ fn validate(cfg: &PreflopConfig) -> Result<usize, String> {
+     let n = cfg.positions.len();
++    if cfg.restricted_entry_k3_limp1 && (!cfg.limp || cfg.max_raises != 4 || cfg.utg_straddle) {
++        return Err("restricted-entry-k3-limp1-v1 requires limps, max_raises=4 and no straddle".into());
++    }
+     if !(2..=9).contains(&n) {
+         return Err("2..9 positions required".into());
+@@ -3107,4 +3117,5 @@ fn validate(cfg: &PreflopConfig) -> Result<usize, String> {
+ fn root_state(cfg: &PreflopConfig, n: usize) -> BuildState {
+     BuildState {
++        voluntary: 0,
+         invested: (0..n).map(|i| cfg.posts[i] + cfg.ante).collect(),
+         folded: 0,
+@@ -3139,4 +3150,7 @@ fn legal_actions_of(cfg: &PreflopConfig, st: &BuildState, actor: usize) -> Vec<P
+     let inv_live = st.invested[actor] - cfg.ante;
+     let owed = (st.to_call - inv_live).max(0.0);
++    let may_enter = !cfg.restricted_entry_k3_limp1
++        || st.voluntary & (1 << actor) != 0 || st.voluntary.count_ones() < 3;
++    let may_limp = !cfg.restricted_entry_k3_limp1 || st.limpers < 1;
+     let mut acts: Vec<PAction> = Vec::new();
+     if owed > 1e-9 {
+@@ -3147,5 +3161,5 @@ fn legal_actions_of(cfg: &PreflopConfig, st: &BuildState, actor: usize) -> Vec<P
+         });
+         // call (limp when no raise yet)
+-        if st.raises > 0 || cfg.limp {
++        if may_enter && (st.raises > 0 || (cfg.limp && may_limp)) {
+             let label = if st.raises == 0 { "Limp" } else { "Call" };
+             acts.push(PAction {
+@@ -3162,5 +3176,5 @@ fn legal_actions_of(cfg: &PreflopConfig, st: &BuildState, actor: usize) -> Vec<P
+         });
+     }
+-    if st.raises < cfg.max_raises && !cfg.call_only_seats.contains(&actor) {
++    if may_enter && st.raises < cfg.max_raises && !cfg.call_only_seats.contains(&actor) {
+         let mut tos: Vec<f64> = Vec::new();
+         if st.raises == 0 {
+@@ -3213,4 +3227,5 @@ fn next_state_of(
+ ) -> BuildState {
+     let mut ns = BuildState {
++        voluntary: st.voluntary,
+         invested: st.invested.clone(),
+         folded: st.folded,
+@@ -3236,4 +3251,5 @@ fn next_state_of(
+             }
+             if a.kind == "call" {
++                ns.voluntary |= 1 << actor;
+                 if st.raises == 0 {
+                     ns.limpers += 1;
+@@ -3244,4 +3260,5 @@ fn next_state_of(
+         }
+         _ => {
++            ns.voluntary |= 1 << actor;
+             ns.invested[actor] = a.to + cfg.ante;
+             ns.last_raise = a.to - st.to_call;
+@@ -3777,2 +3794,69 @@ impl PreflopSolver {
+ #[cfg(test)]
+ mod checkpoint_tests;
++
++#[cfg(test)]
++mod restricted_entry_tests {
++    use super::*;
++    fn config(n: usize) -> PreflopConfig {
++        let mut posts = vec![0.0; n]; posts[n-2]=0.5; posts[n-1]=1.0;
++        serde_json::from_value(serde_json::json!({"positions":(0..n).map(|i|i.to_string()).collect::<Vec<_>>(),
++            "posts":posts,"stack":100.0,"limp":true,"open_raises":[2.5],"raise_mults":[4.0],
++            "fourbet_mults":[3.0],"max_raises":4,"restricted_entry_k3_limp1":true,"realization":"balanced"})).unwrap()
++    }
++    fn step(c: &PreflopConfig, st: &BuildState, kind: &str) -> BuildState {
++        let actor=next_actor_of(c.positions.len(),st).unwrap();
++        let action=legal_actions_of(c,st,actor).into_iter().find(|a|a.kind==kind).unwrap();
++        next_state_of(c,c.positions.len(),st,actor,&action)
++    }
++    fn kinds(c: &PreflopConfig,st: &BuildState)->Vec<String> {
++        legal_actions_of(c,st,next_actor_of(c.positions.len(),st).unwrap()).into_iter().map(|a|a.kind).collect()
++    }
++    #[test]
++    fn restricted_counts_and_builder_match() {
++        let expected=[(6,5286,2230,893165),(7,9168,3905,1549223),(8,14610,6279,2468921),(9,21889,9488,3699072)];
++        for (n,nodes,actions,arena) in expected {
++            let c=config(n); let e=estimate_tree(&c).unwrap();
++            assert_eq!((e.nodes,e.action_nodes,e.arena_len),(nodes,actions,arena));
++            assert!(!e.truncated);
++        }
++        let c=config(6);
++        let eq=Arc::new(EquityTable::build(1));
++        let s=PreflopSolver::new(c.clone(),eq).unwrap();
++        let e=estimate_tree(&c).unwrap();
++        assert_eq!(s.nodes.len() as u64,e.nodes);
++        assert_eq!(s.arena_len as u64,e.arena_len);
++    }
++    #[test]
++    fn restricted_rules_preserve_existing_contributors_and_count_folded_seats() {
++        let c=config(6); let mut st=root_state(&c,6);
++        assert_eq!(st.voluntary,0); // posted blinds do not consume entry slots
++        st=step(&c,&st,"raise"); st=step(&c,&st,"call"); st=step(&c,&st,"raise");
++        assert_eq!(st.voluntary.count_ones(),3);
++        for _ in 0..3 { assert_eq!(kinds(&c,&st),vec!["fold"]); st=step(&c,&st,"fold"); }
++        assert!(kinds(&c,&st).contains(&"call".into()));
++        st=step(&c,&st,"fold");
++        assert_eq!(st.voluntary.count_ones(),3); // never free a folded contributor's slot
++        assert!(kinds(&c,&st).contains(&"raise".into()));
++        // A crafted fresh entrant after a contributor folded is still restricted.
++        st.folded &= !(1 << 3); st.needs |= 1 << 3; st.next_seat=3;
++        assert_eq!(kinds(&c,&st),vec!["fold"]);
++    }
++    #[test]
++    fn restricted_limp_raise_and_free_check_rules() {
++        let c=config(6); let st=step(&c,&root_state(&c,6),"call");
++        assert_eq!(kinds(&c,&st),vec!["fold","raise"]);
++        let st=step(&c,&st,"raise");
++        assert!(kinds(&c,&st).contains(&"call".into()));
++        let mut st=root_state(&c,6); for _ in 0..4 { st=step(&c,&st,"fold"); }
++        st=step(&c,&st,"call"); assert_eq!(kinds(&c,&st),vec!["check","raise"]);
++        let st=step(&c,&st,"check"); assert_eq!(st.voluntary.count_ones(),1);
++    }
++    #[test]
++    fn restricted_configuration_and_legacy_defaults() {
++        let mut c=config(6); c.max_raises=3; assert!(estimate_tree(&c).is_err());
++        c.max_raises=4; c.limp=false; assert!(estimate_tree(&c).is_err());
++        c.restricted_entry_k3_limp1=false; c.max_raises=2;
++        let raw=serde_json::to_value(&c).unwrap(); assert!(raw.get("restricted_entry_k3_limp1").is_none());
++        let e=estimate_tree(&c).unwrap(); assert_eq!(e.action_nodes,607);
++    }
++}
+diff --git a/crates/solver/src/preflop/multiway.rs b/crates/solver/src/preflop/multiway.rs
+index 3070c665..2cd52cfd 100644
+--- a/crates/solver/src/preflop/multiway.rs
++++ b/crates/solver/src/preflop/multiway.rs
+@@ -278,5 +278,5 @@ mod tests {
+     fn coupled_payoffs_flow_through_cfr_and_charge_rake_once() {
+         let cfg = PreflopConfig {
+-            utg_straddle: false,
++            utg_straddle: false, restricted_entry_k3_limp1: false,
+             positions: vec!["BTN".into(), "SB".into(), "BB".into()],
+             stack: 4.0,
+diff --git a/crates/solver/src/preflop/save.rs b/crates/solver/src/preflop/save.rs
+index edd5c314..75549819 100644
+--- a/crates/solver/src/preflop/save.rs
++++ b/crates/solver/src/preflop/save.rs
+@@ -16,4 +16,37 @@ const MAGIC_LEGACY: &[u8] = b"GTOPREFLOP1\n";
+ const MAGIC_COUPLED_DECK: &[u8] = b"GTOPREFLOP2\n";
+ const MAGIC_BALANCED: &[u8] = b"GTOPREFLOP4\n";
++// Never let an unpatched engine reinterpret restricted-game strategies.
++const MAGIC_RESTRICTED: &[u8] = b"GTOPREFLOP5\n";
++
++#[cfg(test)]
++mod restricted_save_tests {
++    use super::*;
++    #[test]
++    fn restricted_save_requires_new_magic_and_explicit_identity() {
++        let cfg: PreflopConfig = serde_json::from_value(serde_json::json!({
++            "positions":["BTN","SB","BB"],"stack":2.0,"posts":[0.0,0.5,1.0],
++            "limp":true,"max_raises":4,"open_raises":[],"raise_mults":[],
++            "add_allin":true,"realization":"balanced","restricted_entry_k3_limp1":true
++        })).unwrap();
++        let eq=Arc::new(EquityTable::build(1));
++        let s=PreflopSolver::new(cfg,eq.clone()).unwrap();
++        let path=std::env::temp_dir().join(format!("gtopen-restricted-save-{}.gtop",std::process::id()));
++        s.save_game(path.to_str().unwrap()).unwrap();
++        let bytes=std::fs::read(&path).unwrap();
++        assert!(bytes.starts_with(MAGIC_RESTRICTED));
++        let loaded=PreflopSolver::load_game(path.to_str().unwrap(),eq.clone()).unwrap();
++        assert!(loaded.cfg.restricted_entry_k3_limp1);
++        assert_eq!(s.arena_len,loaded.arena_len);
++        let mut wrong=bytes.clone(); wrong[10]=b'4'; std::fs::write(&path,&wrong).unwrap();
++        assert!(PreflopSolver::load_game(path.to_str().unwrap(),eq.clone()).is_err());
++        let end=12+bytes[12..].iter().position(|&b|b==b'\n').unwrap();
++        let mut header: serde_json::Value=serde_json::from_slice(&bytes[12..end]).unwrap();
++        header["config"].as_object_mut().unwrap().remove("restricted_entry_k3_limp1");
++        let mut missing=MAGIC_RESTRICTED.to_vec(); missing.extend(serde_json::to_vec(&header).unwrap());
++        missing.extend_from_slice(&bytes[end..]); std::fs::write(&path,&missing).unwrap();
++        assert!(PreflopSolver::load_game(path.to_str().unwrap(),eq).is_err());
++        std::fs::remove_file(path).unwrap();
++    }
++}
+ const MAGIC_STRADDLE: &[u8] = b"GTOPREFLOP3\n";
+ 
+@@ -151,5 +184,7 @@ impl PreflopSolver {
+         let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+         let mut w = BufWriter::new(file);
+-        let magic = if self.cfg.realization == "balanced" || self.cfg.fourbet_mults.is_some() || self.cfg.fourbet_mults_by_seat.is_some() {
++        let magic = if self.cfg.restricted_entry_k3_limp1 {
++            MAGIC_RESTRICTED
++        } else if self.cfg.realization == "balanced" || self.cfg.fourbet_mults.is_some() || self.cfg.fourbet_mults_by_seat.is_some() {
+             MAGIC_BALANCED
+         } else if self.cfg.utg_straddle {
+@@ -195,5 +230,5 @@ impl PreflopSolver {
+         let mut magic = [0u8; 12];
+         r.read_exact(&mut magic).map_err(|e| e.to_string())?;
+-        if magic != MAGIC_LEGACY && magic != MAGIC_COUPLED_DECK && magic != MAGIC_STRADDLE && magic != MAGIC_BALANCED {
++        if magic != MAGIC_LEGACY && magic != MAGIC_COUPLED_DECK && magic != MAGIC_STRADDLE && magic != MAGIC_BALANCED && magic != MAGIC_RESTRICTED {
+             return Err("not a preflop game save".to_string());
+         }
+@@ -210,12 +245,15 @@ impl PreflopSolver {
+         // substitute that default when its required provenance is missing.
+         let raw_header: serde_json::Value = serde_json::from_slice(&line).map_err(|e| e.to_string())?;
+-        if (magic == MAGIC_COUPLED_DECK || magic == MAGIC_STRADDLE || magic == MAGIC_BALANCED) && raw_header.get("multiway_equity_model").is_none() {
++        if (magic == MAGIC_COUPLED_DECK || magic == MAGIC_STRADDLE || magic == MAGIC_BALANCED || magic == MAGIC_RESTRICTED) && raw_header.get("multiway_equity_model").is_none() {
+             return Err("preflop v2 save is missing its multiway equity model".into());
+         }
+-        if magic == MAGIC_BALANCED && raw_header.get("config").and_then(|c| c.get("realization")).is_none() {
++        if (magic == MAGIC_BALANCED || magic == MAGIC_RESTRICTED) && raw_header.get("config").and_then(|c| c.get("realization")).is_none() {
+             return Err("preflop v4 save is missing its heads-up realization model".into());
+         }
+         let header: Header = serde_json::from_value(raw_header).map_err(|e| e.to_string())?;
+-        if magic != MAGIC_BALANCED && (magic==MAGIC_STRADDLE)!=header.config.utg_straddle {
++        if (magic == MAGIC_RESTRICTED) != header.config.restricted_entry_k3_limp1 {
++            return Err("restricted-entry game requires v5 save and explicit restriction metadata".into());
++        }
++        if magic != MAGIC_BALANCED && magic != MAGIC_RESTRICTED && (magic==MAGIC_STRADDLE)!=header.config.utg_straddle {
+             return Err("UTG straddle saves require preflop v3 format and explicit straddle metadata".into());
+         }
+@@ -256,5 +294,5 @@ mod tests {
+         static EQ: OnceLock<Arc<EquityTable>> = OnceLock::new();
+         let cfg = PreflopConfig {
+-            utg_straddle: false,
++            utg_straddle: false, restricted_entry_k3_limp1: false,
+             positions: vec!["BTN".into(), "SB".into(), "BB".into()],
+             stack: 2.0, posts: vec![0.0, 0.5, 1.0], ante: 0.0,
+diff --git a/crates/solver/tests/gpu_bench.rs b/crates/solver/tests/gpu_bench.rs
+index ee794832..e660e8ea 100644
+--- a/crates/solver/tests/gpu_bench.rs
++++ b/crates/solver/tests/gpu_bench.rs
+@@ -10,5 +10,5 @@ fn bench_gpu_six_max() {
+     let eq = Arc::new(EquityTable::build(20000));
+     let cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["UTG".into(), "HJ".into(), "CO".into(), "BTN".into(), "SB".into(), "BB".into()],
+         stack: 100.0,
+diff --git a/crates/solver/tests/gpu_check_perf.rs b/crates/solver/tests/gpu_check_perf.rs
+index 29d75ed4..f2054ea1 100644
+--- a/crates/solver/tests/gpu_check_perf.rs
++++ b/crates/solver/tests/gpu_check_perf.rs
+@@ -10,5 +10,5 @@ fn config(n: usize) -> PreflopConfig {
+     posts[n - 1] = 1.0;
+     PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: (0..n).map(|p| format!("P{p}")).collect(),
+         stack: if n == 8 { 150.0 } else { 100.0 },
+diff --git a/crates/solver/tests/preflop.rs b/crates/solver/tests/preflop.rs
+index bdee325f..d25b339f 100644
+--- a/crates/solver/tests/preflop.rs
++++ b/crates/solver/tests/preflop.rs
+@@ -173,5 +173,5 @@ fn published_ignition_responses_generate_and_roundtrip_for_all_table_sizes() {
+ fn hu_push_fold_config(stack: f64) -> PreflopConfig {
+     PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["SB".into(), "BB".into()],
+         stack,
+@@ -355,5 +355,5 @@ fn six_max_limp_tree_sanity() {
+     let eq = table();
+     let cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec![
+             "UTG".into(),
+@@ -468,5 +468,5 @@ use solver::preflop::{
+ fn hu_limp_config() -> PreflopConfig {
+     PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["SB".into(), "BB".into()],
+         stack: 25.0,
+@@ -819,5 +819,5 @@ fn unreached_bucket_falls_back_to_card_appeal() {
+     let eq = table();
+     let cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["BTN".into(), "SB".into(), "BB".into()],
+         stack: 40.0,
+@@ -1523,5 +1523,5 @@ fn call_only_seat_never_raises() {
+     let eq = table();
+     let cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["BTN".into(), "SB".into(), "BB".into()],
+         stack: 100.0,
+@@ -1575,5 +1575,5 @@ fn per_seat_size_menus() {
+     let eq = table();
+     let mut cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["BTN".into(), "SB".into(), "BB".into()],
+         stack: 100.0,
+@@ -1638,5 +1638,5 @@ fn banded_vs_raise_tightens_vs_big_opens() {
+     let eq = table();
+     let cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["BTN".into(), "SB".into(), "BB".into()],
+         stack: 40.0,
+@@ -2145,5 +2145,5 @@ fn cold_vs_3bet_is_gated_by_the_3betting_hands() {
+     let eq = table();
+     let cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["BTN".into(), "SB".into(), "BB".into()],
+         stack: 100.0,
+@@ -2232,5 +2232,5 @@ fn reach_freq(s: &PreflopSolver, path: &[usize], act_pred: impl Fn(&str) -> bool
+ fn six_max_cfg() -> PreflopConfig {
+     PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["UTG".into(), "HJ".into(), "CO".into(), "BTN".into(), "SB".into(), "BB".into()],
+         stack: 100.0,
+diff --git a/crates/solver/tests/preflop_bench.rs b/crates/solver/tests/preflop_bench.rs
+index 17fc43d4..f7104d67 100644
+--- a/crates/solver/tests/preflop_bench.rs
++++ b/crates/solver/tests/preflop_bench.rs
+@@ -12,5 +12,5 @@ fn bench_pruning_six_max() {
+     let eq = Arc::new(EquityTable::load_or_build("cache/preflop_eq169.bin", 20000));
+     let cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec![
+             "UTG".into(),
+diff --git a/crates/solver/tests/preflop_generic_perf.rs b/crates/solver/tests/preflop_generic_perf.rs
+index 6223fcfd..2bada0b9 100644
+--- a/crates/solver/tests/preflop_generic_perf.rs
++++ b/crates/solver/tests/preflop_generic_perf.rs
+@@ -13,5 +13,5 @@ fn config(n: usize) -> PreflopConfig {
+     posts[n - 1] = 1.0;
+     PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: (0..n).map(|p| format!("P{p}")).collect(),
+         stack: if n >= 7 { 150.0 } else { 100.0 },
+diff --git a/crates/solver/tests/preflop_gpu.rs b/crates/solver/tests/preflop_gpu.rs
+index b167daf6..28e33ede 100644
+--- a/crates/solver/tests/preflop_gpu.rs
++++ b/crates/solver/tests/preflop_gpu.rs
+@@ -70,5 +70,5 @@ fn gpu_matches_cpu_live_utg_straddle() {
+ fn hu25() -> PreflopConfig {
+     PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["SB".into(), "BB".into()],
+         stack: 25.0,
+@@ -301,5 +301,5 @@ fn gpu_push_fold_anchors() {
+     let eq = table();
+     let cfg = PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: vec!["SB".into(), "BB".into()],
+         stack: 10.0,
+diff --git a/crates/solver/tests/preflop_perf.rs b/crates/solver/tests/preflop_perf.rs
+index bb723279..f963c172 100644
+--- a/crates/solver/tests/preflop_perf.rs
++++ b/crates/solver/tests/preflop_perf.rs
+@@ -13,5 +13,5 @@ fn config(n: usize) -> PreflopConfig {
+     posts[n - 1] = 1.0;
+     PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: (0..n).map(|p| format!("P{p}")).collect(),
+         stack: if n == 8 { 150.0 } else { 100.0 },
+diff --git a/crates/solver/tests/preflop_target_perf.rs b/crates/solver/tests/preflop_target_perf.rs
+index 1b5f261e..c1602379 100644
+--- a/crates/solver/tests/preflop_target_perf.rs
++++ b/crates/solver/tests/preflop_target_perf.rs
+@@ -13,5 +13,5 @@ fn config(n: usize) -> PreflopConfig {
+     posts[n - 1] = 1.0;
+     PreflopConfig {
+-        utg_straddle: false,
++        utg_straddle: false, restricted_entry_k3_limp1: false,
+         positions: (0..n).map(|p| format!("P{p}")).collect(),
+         stack: if n == 8 { 150.0 } else { 100.0 },

@@ -1,114 +1,125 @@
-# GTO Reminder
+# 若瑜策略研究
 
-**v0.2 正在建设 6–9 人完整翻前工作台，尚未完成全部精确 GTO 数据覆盖。** 截至 2026-10-23，本地出版库可查询 **143 张图级索引，包含部分转录**：完整的 Open / Facing Open 简化图、部分可读的 Facing 3-Bet 条件频率，以及 Facing 4-Bet 图示动作。143 不是完整策略或行动树覆盖数。出版图、用户导入和合成演示始终区分；缺失数据不补成建议。
+**中文** · [English](README.en.md)
 
-## v0.2 三种工作方式
+面向 **6–9 人、100 BB 现金桌**的翻前策略学习工作台。用范围矩阵、完整行动历史与条件计算研究每一手牌，并保留数据来源、模型限制和不确定性。
 
-- **Published ranges**：按人数、双方位置、场景及手牌查阅出版图。6/9 人 Open、Facing Open 保留原稿 0/50/100% 精度，6 人 SB Open 支持 Limp；后续响应图逐手区分可读、未显示和不明确。固定尺寸 Raise 与 All-in 独立显示，未知尺寸保持空值，可对照 PDF。
-- **Action history**：6–9 人按顺序记录 Fold / Check / Call / 多尺寸 Raise，覆盖 Limp、Cold Call、Squeeze、All-in 等行动流程；支持不同座位后手。频率只在完整历史和条件命中 v2 数据时显示。见[v2 格式](docs/DATA_FORMAT_V2.md)。
-- **Quick lookup**：保留 v1 快捷矩阵、4 个合成演示节点及 v1 导入。
+[在线使用](https://gto-reminder.vercel.app) · [GitHub](https://github.com/Ruoyu-Tianyi/GTO_Reminder) · [部署与域名](docs/DEPLOYMENT.md) · [验收范围](docs/ACCEPTANCE.md) · [数据来源](docs/DATA_SOURCES.md) · [路线图](docs/ROADMAP.md)
 
-| 出版图类型 | 人数与图数 | 实际可查询内容 |
-| --- | --- | --- |
-| Open / Facing Open | 6/9 人，共 64 张 | 原有 13 张 Open、51 张 Facing Open 保持不变；完整转录 10,816 格简化频率 |
-| Facing 3-Bet | 6 人 15 张、9 人 36 张 | 2,606 格可读条件频率，6,013 格缺失；reach 未知，不计算节点整体比例 |
-| Facing 4-Bet | 8 人 28 张 | 985 格仅显示可见动作，3,692 格未显示、55 格不明确；不提供逐手百分比 |
+Vercel 生产站点已上线，GitHub `main` 自动部署已验证。正式域名 `https://gto.tianyizhou.cn` 已绑定项目，待阿里云 DNS 解析生效后启用；目前请使用上方“在线使用”入口。仓库名和程序包名继续保留 `GTO_Reminder` / `gto-reminder`。
 
-完整行动规则支持不等于全部节点已有解。7 人仍未取得免账号、可核验的公开包；8 人 Facing 3-Bet 原图待转录，6/9 人 Facing 4-Bet 尚无已接入来源。原始 PDF 与衍生手牌数据只保存在本地，不随 GitHub 仓库或生产构建发布。
+## 可以做什么
 
-复现与边界：[Open 转录](docs/REFERENCE_TRANSCRIPTION.md)、[Facing Open](docs/RESPONSE_TRANSCRIPTION.md)、[Facing 3-Bet](docs/THREEBET_TRANSCRIPTION.md)、[Facing 4-Bet](docs/FOURBET_TRANSCRIPTION.md)、[数据缺口](docs/RESPONSE_DATA_GAPS.md)。这些转录均不是原始精确 solver 输出。
+- **参考范围图**：浏览出版图表的转录与座位投影，查看 13 × 13 起手牌矩阵、动作频率和原始来源。
+- **完整行动历史**：按真实行动顺序构建查询，查看独立模型、下注尺寸、到达权重和计算质量。
+- **快捷范围查询**：按人数、位置、后手、前序行动及尺寸精确匹配；支持导入自己的策略 JSON。
+- **数据覆盖**：逐项检查标准场景、可用来源与未知手牌，直接打开相应决策，导出清单和缺口。
+- **学习收藏**：保存查询、手牌、行动历史及来源身份，支持跨设备导入、导出和缺失来源提示。
+- **本机分析**：运行单手或全部 169 类手牌的摊牌胜率模拟；在适用的单挑全压场景中计算条件跟注 EV。
 
-GTO Reminder 希望把成熟的德州扑克策略数据整理成易用的网页工具：选择人数、位置、后手和前序行动，查看范围矩阵，并按手牌查询 Open、Call Open、3-Bet、Call 3-Bet、4-Bet 等动作频率。先把翻前查询做可靠，再逐步扩展至翻后。
+界面支持中文 / English 切换、深色策略研究主题及手机布局。位置和动作使用常见扑克缩写。
 
-[GitHub repository](https://github.com/Ruoyu-Tianyi/GTO_Reminder) · [数据格式](docs/DATA_FORMAT.md) · [来源调研](docs/DATA_SOURCES.md) · [后续路线](docs/ROADMAP.md)
+## 数据范围与精度
 
-原图资料库另有 231 个场景索引，来自最初的 205 个基本场景及后续增加的 26 个原图场景。网页顶部点击 `Browse charts` 查阅；原图索引与上述 143 张交互图重叠，不能相加当作覆盖数。来源、原稿缺陷、页码及本地下载方式见[公开图表记录](docs/PUBLIC_CHARTS.md)。
+静态策略库的发布范围如下，来源于 **2026-10-13 本机数据集**的验收记录。数据以压缩快照随网页发布，保留各来源的精度、模型条件与质量标识：
 
-## 当前功能
+| 内容 | 数量与口径 |
+| --- | --- |
+| 标准场景分类 | **434 / 434**；6 / 7 / 8 / 9 人分别为 67 / 92 / 121 / 154 类 |
+| 参考场景 | **325**：234 个出版图表转录、91 个 8→7 人座位投影 |
+| 独立计算模型 | **11**；包含近似模型及保留未收敛标识的研究模型 |
+| 完整历史决策 | **29,425** 个 v2 决策 |
+| 快捷节点 | **312** 个 v1 节点，与行动树重叠，不能相加 |
 
-- 默认英文界面，可切换中文；SB、BB、HJ、BTN 等位置缩写，以及 Raise、Call、Fold 等动作保留英文。
-- 2–9 人二维牌桌，点击座位选择 Hero；按翻前行动顺序选择合法对手位置。单挑时 SB 同时为 BTN / dealer。
-- 查询条件包含游戏类型、人数、位置、有效后手、前序行动、Open / 3-Bet / 4-Bet 尺寸、Ante 和 Rake。
-- 13 × 13 范围矩阵展示 169 类起手牌及动作混频；支持按动作筛选和点击手牌查看频率。
-- 输入 `AKs`、`kAo`、`As Ks`、`K♥A♠` 等手牌并归一化；拒绝 `AK` 这种未说明同花性的输入，以及 `AsAs` 这种重复牌。
-- 完整 Open / Facing Open 出版图按对子 6、suited 4、offsuit 12 个组合汇总；Facing 3-Bet / 4-Bet 的 reach 未知，不展示节点整体动作比例。v2 数据只有满足 reach 条件时才提供相应汇总。
-- 导入本地 JSON，校验场景、位置顺序、下注尺寸、169 类完整覆盖、频率范围与合计，并显示文件声明的来源信息。
-- 精确策略查询只返回完全匹配的节点。缺少节点时显示 `NO DATA`，不会替换后手、人数、抽水或尺寸，也不会插值补出策略；出版图的参考关联单独显示已知条件和缺失项。
+标准分类包括 RFI、面对 Open / 3-Bet / 4-Bet / 5-Bet，以及两种盲位 Limp 场景。每类至少有一个来源无未知手牌行，但不同来源的尺寸、抽水、历史和模型不能混用。完整口径见[验收范围](docs/ACCEPTANCE.md)。
+
+**这是策略研究工具，当前数据不等于完整、精确的 NLHE GTO。**
+
+- 参考图保留原图精度与未知手牌；8 人图色条转录约有 ±2 个百分点的测量误差，7 人座位投影没有重新求解。
+- 8 人图片转录可切换 `Measured %`（测量比例）与 `Actions only`（仅看动作）。动作视图只列出同一转录中的动作，不将色点或单一动作解释成精确频率。6/9 人 Facing 3-Bet 另显示同源 Open、3-Bet 尺寸，原图缺失的尺寸保持未知。
+- 新增受限模型最多允许三名玩家主动入池、一次未加注 Limp，采用 2.5 / 10 / 30 / 100 BB 固定尺寸与近似后续价值。内部误差达标仅适用于该受限模型；较早的未收敛结果继续标记。
+- 缺失、不可达与实际 Fold 是不同状态。查询不自动替换人数、后手、抽水或尺寸，也不插值生成未知策略。
+- 胜率与条件 EV 依赖所选对手范围和抽水；采样区间只描述采样误差，不生成 GTO 动作混频。
+- 任意后手、连续尺寸、完整多人行动树、翻后及 ICM 不属于当前完成范围。
 
 ## 本地运行
 
-Windows 当前工作区可以直接在 PowerShell 中运行：
-
-```powershell
-cd D:\000_Workspace\Texasholdem_gto_reminder
-powershell -ExecutionPolicy Bypass -File .\start.ps1
-```
-
-脚本会查找系统 Node.js，也支持当前用户的 Codex 本地运行时，无需先把 Node 加入系统 PATH。启动后打开终端显示的 `Local` 地址，保持终端打开；按 Ctrl+C 停止。默认端口为 5173，可用 `-Port 5180` 指定其他端口。7890 是网络代理端口，不是网页地址。
-
-建议使用 Node.js 20.19+ 或 22.12+，并使用 npm 安装。仓库使用 `package-lock.json` 锁定依赖版本。
+使用 Node.js 20.19+ 或 22.12+，依赖版本由 `package-lock.json` 锁定。
 
 ```bash
-npm install
+git clone https://github.com/Ruoyu-Tianyi/GTO_Reminder.git
+cd GTO_Reminder
+npm ci
 npm run dev
 ```
 
-打开终端显示的本地网址。开发服务器默认只监听 `127.0.0.1`。
+打开终端显示的本地地址，默认是 `http://127.0.0.1:5173/`。开发服务器只监听本机。
+
+Windows 也可以在仓库目录使用启动脚本；脚本会查找已安装的 Node.js：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+可用 `-Port 5180` 指定其他端口。保持启动终端打开，按 `Ctrl+C` 停止。
 
 ```bash
-npm test
-npm run build
-npm run preview
+npm test          # 数据校验与扑克逻辑测试
+npm run build    # TypeScript 检查和生产构建
+npm run preview  # 在本机预览 dist/
 ```
 
-`test` 运行数据校验与扑克基础逻辑测试；`build` 执行 TypeScript 检查并生成 `dist/`；`preview` 预览生产构建。
+## 公开策略库与本地数据
 
-## 演示场景
+网页采用**全静态部署**，无需登录、后端数据库或 Supabase。选定的业务数据导出至 `public/strategy-library/`，包括参考转录、计算模型与明确列入白名单的原 PDF。策略数据按压缩分片按需加载，gzip 策略数据约 **19.3 MiB**，3 份 PDF 约 **52.3 MiB**，整个发布包约 **71.6 MiB**。PDF 只在打开原图时载入，首屏不会下载整库。
 
-内置的 4 个节点均为 **6-max、100bb、Cash、无 Ante**。演示树使用 Open 2.5bb、3-Bet 10bb、4-Bet 22bb，以及 `5% · 3 BB cap` 这一 Rake 标签。这些条件和手工编写的频率只是界面样例，不是一次真实求解的产物。
+`data/private/` 继续被 Git 忽略，发布流程只导出指定的业务文件；运行日志、求解 checkpoints、审计文件、迁移 ZIP 和其他工作文件不发布。公开快照包含上表的 434 类场景、325 个参考场景、11 个模型和 29,425 个历史决策。
 
-| 场景 | Hero | Villain | 展示的动作 |
-| --- | --- | --- | --- |
-| Open | BTN | — | Open / Fold |
-| Facing Open | BB | BTN | 3-Bet / Call / Fold |
-| Facing 3-Bet | BTN | BB | 4-Bet / Call / Fold |
-| Facing 4-Bet | BB | BTN | 5-Bet / Call / Fold |
+- **线上使用**：浏览器从静态策略库加载内置范围，可在不同电脑或手机上直接查询，无需每台设备恢复本机数据。
+- **本地开发**：优先使用本地数据 API；生产构建读取静态快照。更新本机源数据后，运行 `npm run export:library`，将生成的静态目录与代码一起提交、构建和发布，线上内容才会更新。
+- 使用网页的数据管理入口下载模板、导入获授权的 JSON，再选择对应场景。v1 用于快捷节点，v2 用于完整历史；见[格式说明 v1](docs/DATA_FORMAT.md)和[格式说明 v2](docs/DATA_FORMAT_V2.md)。
+- 手动导入的策略仅保存在当前页面内存，刷新后需重新导入；应用不会将这些范围上传到服务器。
+- 语言偏好和查询收藏保存在当前浏览器。收藏不包含策略频率或 PDF，换电脑需单独导出、导入。
+- 演示频率是界面样例。格式校验不证明来源身份、授权、求解收敛或策略质量。
 
-可从数据面板的 `Covered spots` 直接切换已覆盖场景。页面支持选择其他人数和后手，不代表内置数据已经覆盖它们。
+## 多设备协作
 
-## 导入自己的范围
+**查阅内置策略只需打开同一个网站。** 收藏通过网页导入、导出；开发代码和公开数据快照通过 Git 同步。个人收藏与手动导入的策略不会自动云同步。
 
-1. 打开数据面板，使用 `Download template` 获取完整格式示例。
-2. 按[数据格式说明](docs/DATA_FORMAT.md)填入获授权的数据、完整场景条件和来源信息。下载模板仍是演示数据，不能只修改名称就当作 solver 输出。
-3. 点击 `Import JSON` 导入，再从 `Covered spots` 选择场景。
+每次开始工作先更新代码和依赖：
 
-导入文件只在当前页面的内存中处理，**刷新页面后清空**；应用不会上传范围到服务器或 GitHub。语言偏好单独保存在浏览器本地。
-
-本地开发模式也会读取 `data/private/` 顶层的标准 JSON 文件（单文件上限 20 MB），经过相同校验后加入列表，刷新页面会再次载入。该目录已被 Git 忽略，不进入生产构建。无效文件在数据面板中提示，并不影响其他有效文件。数据面板提供 5–9 人场景覆盖统计和缺失清单；计数不含演示或 PDF，也不等于整个翻前行动树。
-
-用户导入文件的来源网址、许可文字和准确性由文件提供者声明；格式校验不证明供应商身份、使用权限或求解收敛。本地出版转录另有固定来源、元数据与文件指纹校验，也不因此成为精确 solver 数据。具体接入建议见[数据来源调研](docs/DATA_SOURCES.md)。
-
-## 旧版 v1 快捷格式的边界
-
-应用使用 React + TypeScript + Vite，查询预先提供的数据，不运行 solver。以下限制仅针对保留的 v1 快捷格式；完整行动历史使用[独立的 v2 格式](docs/DATA_FORMAT_V2.md)。schema v1 仅表达无人入池与其他玩家均已弃牌的单一加注行动线。
-
-- 不覆盖 Limp、冷跟者、Squeeze、多路行动历史、同节点多个加注尺寸、非对称后手、Straddle、Big Blind Ante、ICM 或 bounty。
-- SB 的完整首次行动可能包含 Limp；v1 不表达该动作。出版图中的 SB Limp 与 v2 行动历史独立处理。
-- Facing 4-Bet 的 Raise 仅为汇总 5-Bet 频率，没有 5-Bet 尺寸或 Shove 区分。
-- 169 类数据不区分具体花色，也不包含到达节点的 reach 权重。范围汇总是对全部起手牌组合的加权展示，不是后续节点中实际到达范围的整体动作比例。
-- `MTT · Chip EV` 是可匹配的数据标签，不表示已提供比赛数据，也不能代表 ICM 策略。
-- 翻后尚未实现；后续数据覆盖、持久保存与研究方向见[路线图](docs/ROADMAP.md)。
-
-## 项目结构
-
-```text
-src/
-  App.tsx              页面、牌桌、范围矩阵与导入交互
-  data/demo.ts         明确标记的合成演示数据
-  lib/poker.ts         手牌、位置、组合数、匹配与校验
-  lib/poker.test.ts    核心逻辑测试
-docs/
-  DATA_FORMAT.md       JSON 格式与当前模型边界
-  DATA_SOURCES.md      专业来源、获取方式与接入建议
-  ROADMAP.md           从翻前基础版本到全局策略研究
+```bash
+git pull --ff-only
+npm ci
 ```
+
+如果另一台电脑还需要重新转录、求解或更新数据快照，可额外迁移完整本机工作数据。使用 Python 标准库工具，在计算与数据写入结束后打包，再将文件复制到另一台电脑：
+
+```bash
+python scripts/pack-local-data.py
+python scripts/pack-local-data.py --verify "path/to/bundle.zip"
+python scripts/pack-local-data.py --restore "path/to/bundle.zip" --dry-run
+python scripts/pack-local-data.py --restore "path/to/bundle.zip"
+```
+
+工具核验清单、SHA-256 和大小；相同文件跳过，冲突拒绝覆盖，并保留恢复记录。源电脑执行打包，目标电脑执行校验与恢复。支持文件、回滚和中断恢复详见[数据迁移说明](docs/DATA_MIGRATION.md)。
+
+需要重建源数据且没有迁移包时，可按[公开图表记录](docs/PUBLIC_CHARTS.md)恢复参考原稿，运行下列脚本重建参考转录；需要 Python、`pypdf`、`Pillow`、`numpy`。近似计算结果另按[本机求解说明](docs/LOCAL_SOLVER.md)生成。日常网页查询无需执行这些步骤。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/restore-reference-data.ps1
+```
+
+## 文档与技术栈
+
+| 文档 | 内容 |
+| --- | --- |
+| [Vercel 部署与域名](docs/DEPLOYMENT.md) | 项目配置、阿里云解析、HTTPS 与自动发布验收 |
+| [验收范围](docs/ACCEPTANCE.md) · [验证记录](docs/VERIFICATION.md) | 场景定义、完成边界与验证证据 |
+| [收藏与全压分析](docs/STUDY_TOOLS.md) | 收藏恢复、范围假设及条件 EV |
+| [本机求解](docs/LOCAL_SOLVER.md) · [数据迁移](docs/DATA_MIGRATION.md) | 计算复现、续算、迁移与回滚 |
+| [格式 v1](docs/DATA_FORMAT.md) · [格式 v2](docs/DATA_FORMAT_V2.md) | 策略导入与模型约束 |
+| [公开图表](docs/PUBLIC_CHARTS.md) · [8 人转录](docs/POKERCOACHING_TRANSCRIPTION.md) | 原稿、页码、转录精度与缺口 |
+| [数据来源](docs/DATA_SOURCES.md) · [路线图](docs/ROADMAP.md) | 来源接入与后续研究 |
+
+React 19 · TypeScript · Vite · Vitest · 原生 CSS。Vercel 托管网页与静态策略快照；查询和交互计算在浏览器运行，本机脚本负责源数据恢复、独立求解与快照导出。更新数据的发布步骤见[部署指南](docs/DEPLOYMENT.md#日常发布与数据更新)。

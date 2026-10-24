@@ -1,12 +1,12 @@
 import { findNode, getPositions, getVillains, type Dataset, type Spot, type SpotKind } from './poker';
 
 export type CoverageConfig = Pick<Spot, 'format' | 'stackBb' | 'anteBb' | 'rake' | 'openSizeBb' | 'threeBetSizeBb' | 'fourBetSizeBb'>;
-export type CoverageStatus = 'imported' | 'demo-only' | 'missing';
+export type CoverageStatus = 'imported' | 'computed-only' | 'demo-only' | 'missing';
 
 export const COVERAGE_PLAYERS = [5, 6, 7, 8, 9] as const;
 export const COVERAGE_SCOPE = 'v1-single-opponent-lines' as const;
 export const COVERAGE_SCOPE_DESCRIPTION = 'RFI and single-opponent vs Open, vs 3-Bet, and vs 4-Bet lines only. Excludes limps, cold calls, squeezes, multiway action histories, and other preflop branches.';
-export const COVERAGE_SOURCE_CAVEAT = 'Imported means user-supplied data, not solver-verified data. Coverage does not independently verify accuracy, provenance, or license rights. Demo data never counts as imported coverage.';
+export const COVERAGE_SOURCE_CAVEAT = 'Imported means user-supplied data, not solver-verified data. Coverage does not independently verify accuracy, provenance, or license rights. Computed data is approximate or unconverged, counted separately, and never counts as imported coverage. Imported and computed source counts can overlap. Demo data never counts as imported coverage.';
 
 export interface CoverageSource {
   datasetId: string;
@@ -19,16 +19,21 @@ export interface CoverageEntry {
   spot: Spot;
   status: CoverageStatus;
   importedSources: CoverageSource[];
+  computedSources: CoverageSource[];
   demoSources: CoverageSource[];
 }
 
 export interface CoverageCounts {
   expected: number;
   imported: number;
+  /** Unique spots with computed sources; may overlap imported. */
+  computed: number;
+  /** Computed spots without an imported source; excludes overlap. */
+  computedOnly: number;
   demoOnly: number;
-  /** No matching imported or demo node exists. */
+  /** No matching imported, computed, or demo node exists. */
   missing: number;
-  /** Includes demo-only spots, which still need actual source data. */
+  /** Includes computed-only and demo-only spots, which lack an imported source. */
   missingImported: number;
   /** A fraction in [0, 1], not a percentage or a source-quality score. */
   importedFraction: number;
@@ -41,7 +46,7 @@ export interface CoverageAudit extends CoverageCounts {
   sourceCaveat: string;
   byPlayers: Array<{ players: number } & CoverageCounts>;
   entries: CoverageEntry[];
-  /** Acquisition checklist: both demo-only and entirely missing spots. */
+  /** Imported-source checklist: computed-only, demo-only, and missing spots. */
   missingImportedSpots: Spot[];
 }
 
@@ -97,13 +102,17 @@ export function enumerateCoverageSpots(config: CoverageConfig, players: readonly
 
 function countsFor(entries: CoverageEntry[]): CoverageCounts {
   const imported = entries.filter((entry) => entry.status === 'imported').length;
+  const computed = entries.filter((entry) => entry.computedSources.length > 0).length;
+  const computedOnly = entries.filter((entry) => entry.status === 'computed-only').length;
   const demoOnly = entries.filter((entry) => entry.status === 'demo-only').length;
   const expected = entries.length;
   return {
     expected,
     imported,
+    computed,
+    computedOnly,
     demoOnly,
-    missing: expected - imported - demoOnly,
+    missing: expected - imported - computedOnly - demoOnly,
     missingImported: expected - imported,
     importedFraction: expected === 0 ? 0 : imported / expected,
   };
@@ -117,6 +126,7 @@ export function auditCoverage(datasets: readonly Dataset[], config: CoverageConf
   const spots = enumerateCoverageSpots(config, players);
   const entries = spots.map((spot): CoverageEntry => {
     const importedSources: CoverageSource[] = [];
+    const computedSources: CoverageSource[] = [];
     const demoSources: CoverageSource[] = [];
     for (const dataset of datasets) {
       const node = findNode(dataset, spot);
@@ -128,9 +138,10 @@ export function auditCoverage(datasets: readonly Dataset[], config: CoverageConf
         source: { ...dataset.source },
       };
       if (dataset.source.kind === 'imported') importedSources.push(reference);
+      else if (dataset.source.kind === 'computed') computedSources.push(reference);
       else if (dataset.source.kind === 'demo') demoSources.push(reference);
     }
-    return { spot, status: importedSources.length > 0 ? 'imported' : demoSources.length > 0 ? 'demo-only' : 'missing', importedSources, demoSources };
+    return { spot, status: importedSources.length > 0 ? 'imported' : computedSources.length > 0 ? 'computed-only' : demoSources.length > 0 ? 'demo-only' : 'missing', importedSources, computedSources, demoSources };
   });
   return {
     config: { ...config },

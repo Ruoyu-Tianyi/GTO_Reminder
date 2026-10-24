@@ -43,7 +43,7 @@ function line(game: TreeGame, kind: SpotKind | 'vs-5bet', hero: Position, villai
 }
 
 describe('simple reference lines from complete action histories', () => {
-  it('matches every existing unambiguous 8-max chart without promoting the CO versus BB gap', () => {
+  it('matches every reviewed 8-max chart including the verified CO versus BB chart', () => {
     for (const entry of POKERCOACHING_PAGES) {
       const history = line(GAME, entry.kind, entry.hero, entry.villain ?? null);
       expect(replayPreflop(GAME, history).nextActor).toBe(entry.hero);
@@ -52,7 +52,7 @@ describe('simple reference lines from complete action histories', () => {
       expect(matches[0].reference.id).toBe('pokercoaching-8max-100bb');
       expect(matches[0].page).toBe(entry.page);
     }
-    expect(findHistoryReferences(GAME, line(GAME, 'vs-3bet', 'CO', 'BB'))).toEqual([]);
+    expect(findHistoryReferences(GAME, line(GAME, 'vs-3bet', 'CO', 'BB')).map((entry) => entry.page)).toEqual([17]);
   });
 
   it.each([[6, 35], [9, 80]] as const)('preserves the %i-max reference topology with exactly %i simple matches', (players, expected) => {
@@ -132,9 +132,9 @@ describe('extended blind and 5-bet reference lines', () => {
     expect(findHistoryReferences(GAME, buildPreset(GAME, 'limp-raise'))).toEqual([]);
   });
 
-  it('matches exactly the 25 visually unambiguous 5-bet shove charts', () => {
+  it('matches exactly the 27 enlarged-image verified 5-bet shove charts', () => {
     const entries = EXTENDED_REFERENCE_PAGES.filter((entry) => entry.scenario === 'vs-5bet-shove');
-    expect(entries).toHaveLength(25);
+    expect(entries).toHaveLength(27);
     for (const entry of entries) {
       const history = line(GAME, 'vs-5bet', entry.hero, entry.villain);
       const state = replayPreflop(GAME, history);
@@ -148,7 +148,7 @@ describe('extended blind and 5-bet reference lines', () => {
     }
   });
 
-  it.each([['UTG', 'UTG+1'], ['UTG+1', 'BB'], ['CO', 'BB']] as const)('does not fill the missing/ambiguous %s versus %s 5-bet chart', (hero, villain) => {
+  it.each([['UTG', 'UTG+1']] as const)('does not fill the unpublished %s versus %s 5-bet chart', (hero, villain) => {
     expect(findHistoryReferences(GAME, line(GAME, 'vs-5bet', hero, villain))).toEqual([]);
   });
 
