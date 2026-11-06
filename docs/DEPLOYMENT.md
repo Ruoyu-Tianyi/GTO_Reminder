@@ -2,13 +2,13 @@
 
 [返回中文 README](../README.md) · [English README](../README.en.md)
 
-当前在线地址：[gto-reminder.vercel.app](https://gto-reminder.vercel.app)。正式域名 `https://gto.tianyizhou.cn` 已绑定项目，待 DNS 解析生效。本文记录已完成配置及剩余的人工解析步骤。
+正式站点：[gto.tianyizhou.cn](https://gto.tianyizhou.cn) · Vercel 备用入口：[gto-reminder.vercel.app](https://gto-reminder.vercel.app)。下文保留域名配置步骤，供重新绑定或排查时参考。
 
 ## 当前状态
 
 首次自动发布记录：2026-10-13，GitHub `main` 的 [`e16aae0`](https://github.com/Ruoyu-Tianyi/GTO_Reminder/commit/e16aae05b9ece9deb0a25af26a9cd5f60ab09174) 触发 Vercel 生产部署并达到 **Ready**，通过未登录浏览器访问验收，正确显示“若瑜策略研究”及完整界面。该记录证明自动发布已接通，不代表后续静态数据快照已经完成上线验收。最新版本以 GitHub `main` 及 Vercel 对应的成功生产部署为准。
 
-`gto.tianyizhou.cn` 已绑定并指向生产部署，未设置重定向，域名所有权已验证。剩余工作是阿里云的 `gto` 解析及正式域名 HTTPS 验收；目前可直接使用上方 Vercel 在线地址。
+`gto.tianyizhou.cn` 已通过阿里云 CNAME 指向生产部署，域名所有权和 HTTPS 访问均已验证。
 
 | 项目 | 配置 |
 | --- | --- |
@@ -18,9 +18,9 @@
 | Vercel 项目 | `gto-reminder` |
 | 已上线地址 | [https://gto-reminder.vercel.app](https://gto-reminder.vercel.app) |
 | GitHub 自动发布 | 已验证：`main` 推送触发生产部署 |
-| 目标域名 | `gto.tianyizhou.cn`，已绑定项目，待 DNS 生效 |
+| 正式域名 | `gto.tianyizhou.cn`，已生效 |
 | 当前 DNS 服务 | 阿里云；权威 NS 为 `dns21.hichina.com` / `dns22.hichina.com` |
-| 当前 Vercel DNS 检查 | 尚未检出 CNAME / A 记录，无冲突记录；配置未生效 |
+| 解析记录 | `gto` CNAME 指向 `cname.vercel-dns.com` |
 
 ## 1. 确认 Vercel 项目与 GitHub 连接
 
@@ -80,7 +80,7 @@
 
 人工验收：
 
-- 打开 `https://gto.tianyizhou.cn`，地址保持该域名，页面标题为“若瑜策略研究”，浏览器无证书警告。
+- 打开 `https://gto.tianyizhou.cn`，地址保持该域名，标签页标题为 `GTO Reminder`，中文版主标题为“若瑜德州策略研究”，浏览器无证书警告。
 - 中英切换、范围矩阵、内置策略查询、收藏和 JSON 导入可用；手机宽度下能正常操作。
 - Vercel 的生产部署状态为 **Ready**，关联的提交与 GitHub `main` 预期版本一致。
 - GitHub 自动生产部署已经验证；以后正常向 `main` 推送代码时，检查新部署对应同一提交，并在成功后确认域名展示新版本。[Vercel GitHub 集成说明](https://vercel.com/docs/git/vercel-for-github)
